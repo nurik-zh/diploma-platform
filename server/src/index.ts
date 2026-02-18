@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import authRoutes from './routes/authRoutes.js';
-import roadmapRoutes from './routes/authRoutes.js';
+import roadmapRoutes from './routes/roadmapRoutes.js';
 
 dotenv.config();
 

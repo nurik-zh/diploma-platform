@@ -8,32 +8,52 @@ generator client {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
+  id        Int            @id @default(autoincrement())
+  email     String         @unique
   password  String
   firstName String?
   lastName  String?
-  role      String   @default("student") // student, admin, company
+  role      String         @default("student") // student, admin, company
   progress  UserProgress[]
-  createdAt DateTime @default(now())
+  createdAt DateTime       @default(now())
+  roadmaps  UserRoadmap[]
 }
 
 model RoadmapNode {
-  id          Int      @id @default(autoincrement())
+  id          Int            @id @default(autoincrement())
   title       String
   description String?
   orderIndex  Int
-  theory      String?  @db.Text
-  testData    Json?    // Сұрақтарды JSON ретінде сақтау
+  theory      String?        @db.Text
+  testData    Json? // Сұрақтарды JSON ретінде сақтау
   progress    UserProgress[]
 }
 
-model UserProgress {
+model Quiz {
+  id         Int    @id @default(autoincrement())
+  profession String // Мысалы: Frontend
+  questions  Json // Сұрақтар мен нұсқалар жиынтығы
+}
+
+model UserRoadmap {
   id         Int      @id @default(autoincrement())
   userId     Int
-  nodeId     Int
-  isDone     Boolean  @default(false)
-  score      Int      @default(0)
-  user       User     @relation(fields: [userId], references: [id])
-  node       RoadmapNode @relation(fields: [nodeId], references: [id])
+  profession String
+  level      String
+  content    Json
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model UserProgress {
+  id            Int          @id @default(autoincrement())
+  userId        Int
+  roadmapId     Int // МЫНА ЖЕРДІ ТЕКСЕР, МҮМКІН nodeId ДЕП ТҰРҒАН ШЫҒАР?
+  stepIndex     Int
+  isCompleted   Boolean      @default(true)
+  completedAt   DateTime     @default(now())
+  user          User         @relation(fields: [userId], references: [id])
+  RoadmapNode   RoadmapNode? @relation(fields: [roadmapNodeId], references: [id])
+  roadmapNodeId Int?
 }
