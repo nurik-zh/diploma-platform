@@ -7,6 +7,8 @@ const prisma = new PrismaClient();
 
 const router = Router();
 
+router.post('/generate', authenticateToken, generateUserRoadmap);
+
 // Тек жүйеге кірген (токені бар) адамдар Roadmap жасай алады
 router.get('/my-path', authenticateToken, async (req: any, res) => {
   try {
@@ -21,16 +23,25 @@ router.get('/my-path', authenticateToken, async (req: any, res) => {
 
     const progress = await prisma.userProgress.findMany({
       where: { userId },
-      select: { nodeId: true, isDone: true }
+      select: { 
+        // nodeId жоқ болғандықтан, қатеде көрсетілген қолжетімді өрісті аламыз
+        roadmapNodeId: true, 
+        isCompleted: true 
+      }
     });
 
     res.json({
-      ...roadmap,
-      // Фронтендшіге дайын "сақталған прогресс" тізімін жібереміз
-      completedNodeIds: progress.map(p => p.nodeId)
+      id: roadmap.id,
+      profession: roadmap.profession,
+      level: roadmap.level,
+      content: roadmap.content,
+      createdAt: roadmap.createdAt,
+      // Мұнда да өріс атын өзгертеміз
+      completedNodeIds: progress.map(p => p.roadmapNodeId)
     });
-  } catch (error) {
-    res.status(500).json({ error: "Деректерді алу қатесі" });
+  } catch (error: any) {
+    console.error("DEBUG ERROR:", error);
+    res.status(500).json({ error: "Деректерді алу қатесі", details: error.message });
   }
 });
 
