@@ -50,14 +50,16 @@ router.post('/complete-node', authenticateToken, async (req: any, res) => {
   const userId = req.user.userId;
 
   try {
-    const progress = await prisma.userProgress.upsert({
-      where: {
-        userId_nodeId: { userId, nodeId }
-      },
-      update: { isDone: true },
-      create: { userId, nodeId, isDone: true }
+    const progress = await prisma.userProgress.findMany({
+      where: { userId },
+      select: { 
+        nodeId: true, // Схемада "nodeId" деп тұрғандықтан, осылай қалдыр
+        isDone: true  // Схемада "isDone" деп тұр (isCompleted емес)
+      }
     });
-    res.json(progress);
+
+    // JSON жауапта:
+    completedNodeIds: progress.map(p => p.nodeId)
   } catch (error) {
     res.status(500).json({ error: "Прогрессті сақтау мүмкін болмады" });
   }
