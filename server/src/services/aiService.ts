@@ -44,3 +44,25 @@ export const getAIResponse = async (profession: string, score: number) => {
     return { roadmap: [] }; // Mock деректерді осында қоссаң болады
   }
 };
+
+export const generateTopicContent = async (title: string, profession: string) => {
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+  const prompt = `
+    Сен ${profession} маманына арналған менторсың. 
+    "${title}" тақырыбы бойынша:
+    1. Сапалы әрі қысқаша теориялық материал жаз (Markdown форматында).
+    2. Тақырыпты бекітуге арналған 3 сұрақтан тұратын тест жаса.
+    
+    Жауапты ТЕК мынадай JSON форматында бер:
+    {
+      "theory": "Мәтін осында...",
+      "questions": [
+        { "question": "сұрақ?", "options": ["а", "б", "в", "г"], "correctIndex": 0 }
+      ]
+    }
+  `;
+
+  const result = await model.generateContent(prompt);
+  return JSON.parse(result.response.text().replace(/```json|```/g, "").trim());
+};

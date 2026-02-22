@@ -1,47 +1,83 @@
-import { Request, Response } from 'express';
-import { getAIResponse } from '../services/aiService.js';
+import { Response } from 'express';
 import pkg from '@prisma/client';
+import { getAIResponse } from '../services/aiService.js';
 const { PrismaClient } = pkg;
 const prisma = new PrismaClient();
 
-// src/controllers/roadmapController.ts
-export const generateUserRoadmap = async (req: any, res: Response) => {
-  try {
-    const { profession, score } = req.body;
-    const userId = req.user.userId;
+export const getRoadmaps = async (req: any, res: Response) => {
+  const roadmaps = await prisma.roadmap.findMany();
+  res.json(roadmaps);
+};
 
-    const aiData = await getAIResponse(profession, score);
+export const getRoadmapTree = async (req: any, res: Response) => {
+  const nodes = await prisma.roadmapNode.findMany({ orderBy: { orderIndex: 'asc' } });
+  
+  // Контракт: Record<string, RoadmapNode[]>
+  const tree: Record<string, any[]> = {};
+  nodes.forEach(node => {
+    if (!tree[node.roadmapId]) tree[node.roadmapId] = [];
+    tree[node.roadmapId].push({
+      id: node.id,
+      title: node.title,
+      status: "locked" // Фронтенд үшін, прогрессті қоссаң 'in_progress' болады
+    });
+  });
+  res.json(tree);
+};
 
-    const newRoadmap = await prisma.userRoadmap.create({
+export const getRoadmapAssessment = async (req: any, res: Response) => {
+  const { roadmapId } = req.params;
+  // Mock assessment (бұрынғы quizData)
+  res.json({
+    roadmapId,
+    title: "Бастапқы тест",
+    questions: [
+      {
+        id: "q1",
+        text: "HTML деген не?",
+        options: [{ id: "1", label: "Тіл", score: 10 }, { id: "2", label: "Қате", score: 0 }]
+      }
+    ]
+  });
+};
+
+export const submitAssessment = async (req: any, res: Response) => {
+  const { roadmapId } = req.params;
+  const { answers } = req.body; // Контракт: Record<string, number>
+  const userId = req.user.userId;
+
+  let score = Object.values(answers).reduce((a: any, b: any) => a + b, 0);
+  const professionTitle = "Frontend Developer"; // roadmapId арқылы табуға болады
+  const assignedLevel = score > 10 ? "Intermediate" : "Beginner";
+
+  // 1. AI арқылы жеке бағыт құру
+  const aiData = await getAIResponse(professionTitle, score);
+
+  // 2. БД-ға Roadmap және Node-тарды сақтау
+  let roadmap = await prisma.roadmap.findUnique({ where: { id: roadmapId } });
+  if (!roadmap) {
+    roadmap = await prisma.roadmap.create({
+      data: { id: roadmapId, title: professionTitle, description: "AI Road", level: assignedLevel }
+    });
+  }
+
+  await prisma.userRoadmap.create({
+    data: { userId, roadmapId: roadmap.id, assignedLevel }
+  });
+
+  // AI-дан келген сабақтарды қосу
+  for (let i = 0; i < aiData.roadmap.length; i++) {
+    const item = aiData.roadmap[i];
+    await prisma.roadmapNode.create({
       data: {
-        userId: userId,
-        profession: profession,
-        level: score >= 8 ? 'Middle' : 'Beginner', // А нүктесі
-        content: aiData, // AI-дан келген толық жол (Path summary-мен бірге)
+        roadmapId: roadmap.id,
+        title: item.topic,
+        description: item.task,
+        orderIndex: i
       }
     });
-
-    // RoadmapNode-тарды құру (Duolingo шарлары)
-    const nodes = await Promise.all(
-      aiData.roadmap.map(async (item: any, index: number) => {
-        return await prisma.roadmapNode.create({
-          data: {
-            title: item.topic,
-            description: item.task,
-            orderIndex: index,
-            theory: `Апта: ${item.week}. Мақсат: ${item.milestone}`
-          }
-        });
-      })
-    );
-
-    res.status(201).json({ 
-      message: "А-дан Б-ға жол құрылды",
-      summary: aiData.path_summary,
-      roadmap: newRoadmap, 
-      nodes 
-    });
-  } catch (error) {
-    res.status(500).json({ error: "Roadmap жасау мүмкін болмады" });
   }
+
+  // Контрактқа сай AssessmentSubmitResponse
+  res.json({ roadmapId: roadmap.id, level: assignedLevel });
 };

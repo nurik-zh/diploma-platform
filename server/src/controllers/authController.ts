@@ -1,68 +1,56 @@
 import { Request, Response } from 'express';
 import pkg from '@prisma/client';
-const { PrismaClient } = pkg;
-
-const prisma = new PrismaClient();
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken'
+import jwt from 'jsonwebtoken';
 
+const { PrismaClient } = pkg;
+const prisma = new PrismaClient();
+
+// Helper: Фронтендке AuthUser форматын беру
+const formatAuthUser = (user: any) => ({
+  id: user.id,
+  email: user.email,
+  firstLogin: user.firstLogin,
+  createdAt: user.createdAt.toISOString(),
+  country: user.country,
+  city: user.city,
+  university: user.university
+});
 
 export const register = async (req: Request, res: Response) => {
   try {
-    const { email, password, firstName, lastName } = req.body;
-    
-    // Парольді шифрлау
+    const { email, password } = req.body;
     const hashedPassword = await bcrypt.hash(password, 10);
     
     const user = await prisma.user.create({
-      data: { email, password: hashedPassword, firstName, lastName }
+      data: { email, password: hashedPassword, fullName: email.split('@')[0] }
     });
 
-    res.status(201).json({ message: "Пайдаланушы тіркелді", userId: user.id });
-  } catch (error) {
-    res.status(400).json({ error: "Тіркелу кезінде қате кетті" });
-  }
+    const token = jwt.sign({ userId: user.id, role: user.role }, process.env.JWT_SECRET || 'secret_key');
+
+    res.status(201).json({ token, user: formatAuthUser(user) });
+  } catch (error: any) {
+  console.error("FULL ERROR:", error); // Терминалдан қатені көру үшін
+  res.status(400).json({ 
+    message: "Тіркелу кезінде қате кетті", 
+    details: error.message 
+  });
+}
 };
 
 export const login = async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
-
-    // 1. Пайдаланушыны базадан іздеу
     const user = await prisma.user.findUnique({ where: { email } });
 
-    if (!user) {
-      return res.status(401).json({ error: "Мұндай пайдаланушы табылмады" });
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(401).json({ message: "Құпия сөз немесе email қате" });
     }
 
-    // 2. Құпия сөзді тексеру (hash-талған түрімен салыстыру)
-    const isPasswordValid = await bcrypt.compare(password, user.password);
+    const token = jwt.sign({ userId: user.id, role: user.role }, process.env.JWT_SECRET || 'secret_key');
 
-    if (!isPasswordValid) {
-      return res.status(401).json({ error: "Құпия сөз қате" });
-    }
-
-    // 3. JWT Токен жасау
-    const token = jwt.sign(
-      { userId: user.id, role: user.role },
-      process.env.JWT_SECRET || 'secret_key', // .env файлынан алынады
-      { expiresIn: '24h' } // Токен 24 сағатқа жарамды
-    );
-
-    // 4. Жауап қайтару
-    res.json({
-      message: "Жүйеге сәтті кірдіңіз",
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        role: user.role
-      }
-    });
-
+    res.json({ token, user: formatAuthUser(user) });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Логин кезінде ішкі қате кетті" });
+    res.status(500).json({ message: "Ішкі қате" });
   }
 };
