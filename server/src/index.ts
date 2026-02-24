@@ -6,6 +6,7 @@ import authRoutes from './routes/authRoutes.js';
 import profileRoutes from './routes/profileRoutes.js';
 import roadmapRoutes from './routes/roadmapRoutes.js';
 import topicRoutes from './routes/topicRoutes.js';
+import vacancyRoutes from './routes/vacancyRoutes.js';
 
 dotenv.config();
 const app = express();
@@ -86,6 +87,29 @@ const swaggerDocument = {
         },
         responses: { 200: { description: 'Success' } }
       }
+    },
+    '/api/vacancies': {
+      get: {
+        tags: ['Vacancies'],
+        summary: 'Get all vacancies',
+        responses: { 200: { description: 'Success' } }
+      }
+    },
+    '/api/vacancies/{id}': {
+      get: {
+        tags: ['Vacancies'],
+        summary: 'Get vacancy details (Questions & Tests)',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'Success' } }
+      }
+    },
+    '/api/vacancies/{id}/tasks': {
+      get: {
+        tags: ['Vacancies'],
+        summary: 'Get tasks for a vacancy',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'Success' } }
+      }
     }
   }
 };
@@ -98,6 +122,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/roadmaps', roadmapRoutes);
 app.use('/api/topics', topicRoutes);
+app.use('/api/vacancies', vacancyRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
