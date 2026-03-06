@@ -11,7 +11,11 @@ import vacancyRoutes from './routes/vacancyRoutes.js';
 dotenv.config();
 const app = express();
 
-app.use(cors());
+app.use(cors({
+    origin: 'http://localhost:5173', // Фронтендтің мекенжайы
+    credentials: true
+}));
+
 app.use(express.json());
 
 // Swagger Configuration (Таза JSON, YAML қатесі мүлдем болмайды)
