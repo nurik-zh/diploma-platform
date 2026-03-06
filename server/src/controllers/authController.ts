@@ -1,56 +1,91 @@
-import { Request, Response } from 'express';
-import pkg from '@prisma/client';
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+import { Request, Response } from "express";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import { prisma } from "../prisma/client.js";
 
-const { PrismaClient } = pkg;
-const prisma = new PrismaClient();
-
-// Helper: Фронтендке AuthUser форматын беру
 const formatAuthUser = (user: any) => ({
   id: user.id,
   email: user.email,
-  firstLogin: user.firstLogin,
+  role: user.role ?? "student",
+  firstLogin: Boolean(user.firstLogin),
   createdAt: user.createdAt.toISOString(),
-  country: user.country,
-  city: user.city,
-  university: user.university
+  country: user.country ?? "Kazakhstan",
+  city: user.city ?? "Almaty",
+  university: user.university ?? "Satbayev University",
+  companyProfile: null,
 });
 
 export const register = async (req: Request, res: Response) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, role, country, city, university, fullName } = req.body ?? {};
+
+    if (!email || !password) {
+      return res
+        .status(400)
+        .json({ message: "Email and password are required" });
+    }
+
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+    if (existing) {
+      return res.status(400).json({ message: "User already exists" });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
-    
+
     const user = await prisma.user.create({
-      data: { email, password: hashedPassword, fullName: email.split('@')[0] }
+      data: {
+        email: normalizedEmail,
+        password: hashedPassword,
+        role: typeof role === "string" ? role : "student",
+        ...(typeof country === "string" ? { country } : {}),
+        ...(typeof city === "string" ? { city } : {}),
+        ...(typeof university === "string" ? { university } : {}),
+        ...(typeof fullName === "string" ? { fullName } : {}),
+      },
     });
 
-    const token = jwt.sign({ userId: user.id, role: user.role }, process.env.JWT_SECRET || 'secret_key');
+    const token = jwt.sign(
+      { userId: user.id },
+      process.env.JWT_SECRET || "HalaMadrid",
+    );
 
     res.status(201).json({ token, user: formatAuthUser(user) });
   } catch (error: any) {
-  console.error("FULL ERROR:", error); // Терминалдан қатені көру үшін
-  res.status(400).json({ 
-    message: "Тіркелу кезінде қате кетті", 
-    details: error.message 
-  });
-}
+    console.error("Register error:", error);
+    res.status(400).json({
+      message: "Registration failed",
+      details: error.message,
+    });
+  }
 };
 
 export const login = async (req: Request, res: Response) => {
   try {
-    const { email, password } = req.body;
-    const user = await prisma.user.findUnique({ where: { email } });
+    const { email, password } = req.body ?? {};
 
-    if (!user || !(await bcrypt.compare(password, user.password))) {
-      return res.status(401).json({ message: "Құпия сөз немесе email қате" });
+    if (!email || !password) {
+      return res
+        .status(400)
+        .json({ message: "Email and password are required" });
     }
 
-    const token = jwt.sign({ userId: user.id, role: user.role }, process.env.JWT_SECRET || 'secret_key');
+    const user = await prisma.user.findUnique({
+      where: { email: String(email).trim().toLowerCase() },
+    });
+
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
+
+    const token = jwt.sign(
+      { userId: user.id },
+      process.env.JWT_SECRET || "HalaMadrid",
+    );
 
     res.json({ token, user: formatAuthUser(user) });
-  } catch (error) {
-    res.status(500).json({ message: "Ішкі қате" });
+  } catch (error: any) {
+    console.error("Login error:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
 };

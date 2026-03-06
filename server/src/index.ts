@@ -1,20 +1,24 @@
-import express from 'express';
-import cors from 'cors';
-import dotenv from 'dotenv';
-import swaggerUi from 'swagger-ui-express';
-import authRoutes from './routes/authRoutes.js';
-import profileRoutes from './routes/profileRoutes.js';
-import roadmapRoutes from './routes/roadmapRoutes.js';
-import topicRoutes from './routes/topicRoutes.js';
-import vacancyRoutes from './routes/vacancyRoutes.js';
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import swaggerUi from "swagger-ui-express";
+import authRoutes from "./routes/authRoutes.js";
+import profileRoutes from "./routes/profileRoutes.js";
+import userRoutes from "./routes/userRoutes.js";
+import topicRoutes from "./routes/topicRoutes.js";
+import roadmapRoutes from "./routes/roadmapRoutes.js";
+import vacancyRoutes from "./routes/vacancyRoutes.js";
+import leaderboardRoutes from "./routes/leaderboardRoutes.js";
 
 dotenv.config();
 const app = express();
 
-app.use(cors({
-    origin: 'http://localhost:5173', // Фронтендтің мекенжайы
-    credentials: true
-}));
+app.use(
+  cors({
+    origin: "http://localhost:5173",
+    credentials: true,
+  }),
+);
 
 app.use(express.json());
 
@@ -57,76 +61,36 @@ const swaggerDocument = {
         responses: { 200: { description: 'Success' } }
       }
     },
-    '/api/profile': {
-      get: {
-        tags: ['Profile'],
-        summary: 'Get user profile',
-        security: [{ bearerAuth: [] }],
-        responses: { 200: { description: 'Success' } }
-      }
-    },
-    '/api/roadmaps/tree': {
-      get: {
-        tags: ['Roadmaps'],
-        summary: 'Get roadmap tree structures',
-        security: [{ bearerAuth: [] }],
-        responses: { 200: { description: 'Success' } }
-      }
-    },
-    '/api/topics/{topicId}/content': {
-      get: {
-        tags: ['Topics'],
-        summary: 'Get topic theory content',
-        parameters: [{ name: 'topicId', in: 'path', required: true, schema: { type: 'string' } }],
-        responses: { 200: { description: 'Success' } }
-      }
-    },
-    '/api/topics/{topicId}/result': {
-      post: {
-        tags: ['Topics'],
-        summary: 'Submit test result score',
-        parameters: [{ name: 'topicId', in: 'path', required: true, schema: { type: 'string' } }],
-        requestBody: {
-          content: { 'application/json': { schema: { type: 'object', properties: { score: { type: 'number' } } } } }
-        },
-        responses: { 200: { description: 'Success' } }
-      }
-    },
-    '/api/vacancies': {
-      get: {
-        tags: ['Vacancies'],
-        summary: 'Get all vacancies',
-        responses: { 200: { description: 'Success' } }
-      }
-    },
-    '/api/vacancies/{id}': {
-      get: {
-        tags: ['Vacancies'],
-        summary: 'Get vacancy details (Questions & Tests)',
-        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
-        responses: { 200: { description: 'Success' } }
-      }
-    },
-    '/api/vacancies/{id}/tasks': {
-      get: {
-        tags: ['Vacancies'],
-        summary: 'Get tasks for a vacancy',
-        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
-        responses: { 200: { description: 'Success' } }
-      }
-    }
+
+
   }
 };
 
-// Swagger UI қосу
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+// Swagger UI
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
-// Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/profile', profileRoutes);
-app.use('/api/roadmaps', roadmapRoutes);
-app.use('/api/topics', topicRoutes);
-app.use('/api/vacancies', vacancyRoutes);
+// Routes (both /api/... and plain /... for frontend)
+app.use("/api/auth", authRoutes);
+app.use("/auth", authRoutes);
+
+app.use("/api/profile", profileRoutes);
+app.use("/profile", profileRoutes);
+
+app.use("/api/users", userRoutes);
+app.use("/users", userRoutes);
+
+app.use("/api/topics", topicRoutes);
+app.use("/topics", topicRoutes);
+
+app.use("/api/roadmaps", roadmapRoutes);
+app.use("/roadmaps", roadmapRoutes);
+
+app.use("/api/leaderboard", leaderboardRoutes);
+app.use("/leaderboard", leaderboardRoutes);
+
+// Vacancies + company cabinet are mounted at root and /api
+app.use("/api", vacancyRoutes);
+app.use("/", vacancyRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

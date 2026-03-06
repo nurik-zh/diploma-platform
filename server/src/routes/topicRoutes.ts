@@ -1,11 +1,20 @@
-import { Router } from 'express';
-import { getTopicContent, getTopicTest, submitTopicResult } from '../controllers/topicController.js';
-import { authenticateToken } from '../middleware/authMiddleware.js';
+import { Router } from "express";
+import { authenticateJWT } from "../middleware/authMiddleware.js";
+import {
+  getTopicContent,
+  getTopicInterviewQuestions,
+  getTopics,
+  getTopicTest,
+  postTopicResult,
+} from "../controllers/topicController.js";
 
 const router = Router();
 
-router.get('/:topicId/content', authenticateToken, getTopicContent);
-router.get('/:topicId/test', authenticateToken, getTopicTest);
-router.post('/:topicId/result', authenticateToken, submitTopicResult);
+router.get("/", getTopics);
+router.get("/:topicId/content", getTopicContent);
+router.get("/:topicId/test", getTopicTest);
+router.post("/:topicId/result", authenticateJWT, postTopicResult);
+router.get("/:topicId/interview-questions", getTopicInterviewQuestions);
 
 export default router;
+

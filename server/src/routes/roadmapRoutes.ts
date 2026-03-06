@@ -1,12 +1,10 @@
-import { Router } from 'express';
-import { getRoadmaps, getRoadmapAssessment, submitAssessment, getRoadmapTree } from '../controllers/roadmapController.js';
-import { authenticateToken } from '../middleware/authMiddleware.js';
+import { Router } from "express";
+import { getRoadmapTree, getRoadmaps } from "../controllers/roadmapController.js";
 
 const router = Router();
 
-router.get('/', authenticateToken, getRoadmaps);
-router.get('/tree', authenticateToken, getRoadmapTree);
-router.get('/:roadmapId/assessment', authenticateToken, getRoadmapAssessment);
-router.post('/:roadmapId/assessment/submit', authenticateToken, submitAssessment);
+router.get("/", getRoadmaps);
+router.get("/tree", getRoadmapTree);
 
 export default router;
+
