@@ -9,6 +9,7 @@ import topicRoutes from "./routes/topicRoutes.js";
 import roadmapRoutes from "./routes/roadmapRoutes.js";
 import vacancyRoutes from "./routes/vacancyRoutes.js";
 import leaderboardRoutes from "./routes/leaderboardRoutes.js";
+import socialRoutes from "./routes/socialRoutes.js";
 
 dotenv.config();
 const app = express();
@@ -91,6 +92,10 @@ app.use("/leaderboard", leaderboardRoutes);
 // Vacancies + company cabinet are mounted at root and /api
 app.use("/api", vacancyRoutes);
 app.use("/", vacancyRoutes);
+
+
+app.use("/api/social", socialRoutes);
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
