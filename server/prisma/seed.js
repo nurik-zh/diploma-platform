@@ -15,7 +15,7 @@ async function main() {
     data: {
       id: "vac-frontend-junior-1",
       company: "Kaspi Tech",
-      title: "Junior Frontend Developer (Vue)",
+      title: "Junior UX/UI Developer (Vue)",
       level: "junior",
       location: "Almaty",
       employment: "full-time",

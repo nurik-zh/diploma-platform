@@ -7,6 +7,7 @@ import profileRoutes from './routes/profileRoutes.js';
 import roadmapRoutes from './routes/roadmapRoutes.js';
 import topicRoutes from './routes/topicRoutes.js';
 import vacancyRoutes from './routes/vacancyRoutes.js';
+import leaderboardRoutes from './routes/leaderboardRoutes.js';
 
 dotenv.config();
 const app = express();
@@ -128,7 +129,9 @@ app.use('/api/roadmaps', roadmapRoutes);
 app.use('/api/topics', topicRoutes);
 app.use('/api/vacancies', vacancyRoutes);
 
-const PORT = process.env.PORT || 5000;
+app.use('/api/leaderboard', leaderboardRoutes);
+
+const PORT = process.env.PORT || 5002;
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on http://localhost:${PORT}`);
   console.log(`📖 API Documentation: http://localhost:${PORT}/api-docs`);

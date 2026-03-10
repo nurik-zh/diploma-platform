@@ -6,7 +6,9 @@ const router = Router();
 
 router.get('/', vacancyController.getAllVacancies);
 router.get('/:id', vacancyController.getVacancyById);
-router.get('/:id/tasks', vacancyController.getVacancyTasks);
+router.get('/:id/tasks', authenticateToken, vacancyController.getVacancyRealTasks);
 router.post('/:id/tasks/:taskId/submission',authenticateToken, vacancyController.submitTask);
+
+router.get('/:id/leaderboard', vacancyController.getVacancyTaskLeaderboard);
 
 export default router;

@@ -81,3 +81,50 @@ export const submitAssessment = async (req: any, res: Response) => {
   // Контрактқа сай AssessmentSubmitResponse
   res.json({ roadmapId: roadmap.id, level: assignedLevel });
 };
+
+// roadmapController.ts
+
+// Пайдаланушының таңдаған жол карталарын алу
+export const getUserRoadmapCollection = async (req: any, res: Response) => {
+  try {
+    const userId = req.user.id; // Токеннен алынған ID
+
+    const collection = await prisma.userRoadmap.findMany({
+      where: { userId: userId },
+      select: { roadmapId: true }
+    });
+
+    // Тек ID-лер тізімін қайтару: ["frontend", "backend"]
+    res.json(collection.map(c => c.roadmapId));
+  } catch (error) {
+    res.status(500).json({ error: "Коллекцияны алу мүмкін болмады" });
+  }
+};
+
+// Прогрессті алу (әзірге бос массив немесе статус қайтару)
+export const getRoadmapProgress = async (req: any, res: Response) => {
+  try {
+    // Болашақта бұл жерде әр тақырыптың орындалу пайызы есептеледі
+    // Қазірше фронтенд қате бермес үшін бос массив қайтарамыз
+    res.json([]); 
+  } catch (error) {
+    res.status(500).json({ error: "Прогрессті алу қатесі" });
+  }
+};
+
+// roadmapController.ts
+
+export const getUserYearActivity = async (req: any, res: Response) => {
+  try {
+    const userId = req.user.id;
+    
+    // Бұл жерде болашақта базадан юзердің іс-әрекеттерін (logs) табамыз.
+    // Қазірше бос массив қайтарамыз, сонда фронтендтегі график бос болса да, қате шықпайды.
+    const activity = []; 
+    
+    res.json(activity);
+  } catch (error) {
+    console.error("Activity error:", error);
+    res.status(500).json({ error: "Белсенділік мәліметін алу мүмкін болмады" });
+  }
+};

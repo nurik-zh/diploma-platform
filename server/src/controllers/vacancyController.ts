@@ -28,10 +28,105 @@ export const getVacancyById = async (req: Request, res: Response) => {
         realTasks: true 
       }
     });
+
     if (!vacancy) return res.status(404).json({ error: "Вакансия табылмады" });
-    res.json(vacancy);
+
+    // Фронтенд күтетін форматқа келтіру (Preparation нысанын құрастыру)
+    const formattedVacancy = {
+      ...vacancy,
+      preparation: {
+        direction: vacancy.tags[0] || "General", // немесе базаға жаңа өріс қосу
+        questions: vacancy.questions,
+        test: vacancy.tests
+      }
+    };
+
+    res.json(formattedVacancy);
   } catch (error) {
     res.status(500).json({ error: "Қате орын алды" });
+  }
+};
+
+export const getVacancyTaskLeaderboard = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const submissions = await prisma.submission.findMany({
+      where: { task: { vacancyId: id } },
+      include: { 
+        user: true,
+        task: true // Тапсырманың күрделілігін білу үшін
+      }
+    });
+
+    const userStats = submissions.reduce((acc: any, sub) => {
+      if (!acc[sub.userId]) {
+        acc[sub.userId] = {
+          userId: sub.userId,
+          fullName: sub.user.fullName || "Anonymous",
+          tasksSubmitted: 0,
+          totalScore: 0,
+        };
+      }
+      
+      // Ұпай есептеу логикасы: 
+      // Мысалы: әр тапсырма үшін 50 ұпай + (күрделілік сағаты * 10)
+      const taskScore = 50 + (sub.task.estimatedHours * 10); 
+      
+      acc[sub.userId].tasksSubmitted += 1;
+      acc[sub.userId].totalScore += taskScore;
+      return acc;
+    }, {});
+
+    const leaders = Object.values(userStats)
+      .map((l: any) => ({
+        ...l,
+        // Орташа сапа ұпайы (0-100 аралығында)
+        averageQualityScore: Math.min(100, Math.round(l.totalScore / (l.tasksSubmitted * 1.5))),
+        aiVerdict: l.totalScore > 150 ? "excellent" : "good",
+        sentToHr: l.totalScore > 200 // 200 ұпайдан асса HR-ға кетеді
+      }))
+      .sort((a, b) => b.totalScore - a.totalScore) // Ұпайы көптер жоғарыда
+      .map((l, index) => ({ ...l, rank: index + 1 }));
+
+    res.json({
+      vacancyId: id,
+      leaders: leaders.slice(0, 10),
+      currentUser: leaders.find(l => l.userId === Number((req as any).user?.userId)) || null
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Лидербордты есептеу қатесі" });
+  }
+};
+
+export const getVacancyRealTasks = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = (req as any).user?.userId;
+
+    const tasks = await prisma.task.findMany({
+      where: { vacancyId: id },
+      include: {
+        submissions: {
+          where: { userId: Number(userId) },
+          orderBy: { createdAt: 'desc' },
+          take: 1
+        }
+      }
+    });
+
+    const result = tasks.map(task => ({
+      task: task,
+      submission: task.submissions[0] ? {
+        solutionUrl: task.submissions[0].githubUrl,
+        comment: task.submissions[0].notes,
+        submittedAt: task.submissions[0].createdAt
+      } : null
+    }));
+
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: "Тапсырмаларды алу мүмкін болмады" });
   }
 };
 
@@ -47,42 +142,35 @@ export const getVacancyTasks = async (req: Request, res: Response) => {
 };
 
 export const submitTask = async (req: Request, res: Response) => {
-  const { taskId } = req.params;
-  const { githubUrl, notes } = req.body;
-
-  const rawUserId = (req as any).user?.userId; 
-
-  if (!rawUserId) {
-    return res.status(401).json({ error: "Авторизация қажет. Жүйеге кіріңіз." });
-  }
-
-  const userId = parseInt(rawUserId);
-
-  if (isNaN(userId)) {
-    return res.status(400).json({ error: "Пайдаланушы ID-і дұрыс емес (сан болуы керек)" });
-  }
-
-  if (!githubUrl) {
-    return res.status(400).json({ error: "GitHub сілтемесі міндетті" });
-  }
-
   try {
-    const newSubmission = await prisma.submission.create({
-      data: {
+    const { vacancyId, taskId } = req.params;
+    const { githubUrl, notes } = req.body;
+    const userId = (req as any).user.userId; // JWT-ден алынған ID
+
+    // Тапсырманы базаға сақтау немесе жаңарту (Upsert)
+    const submission = await prisma.submission.upsert({
+      where: {
+        userId_taskId: { // Prisma-да User және Task үшін unique constraint болуы керек
+          userId: Number(userId),
+          taskId: taskId
+        }
+      },
+      update: {
         githubUrl,
         notes,
-        taskId,    
-        userId,     
-        status: "pending"
+        createdAt: new Date()
+      },
+      create: {
+        userId: Number(userId),
+        taskId: taskId,
+        githubUrl,
+        notes
       }
     });
 
-    res.status(201).json({ 
-      message: "Тапсырма сәтті жіберілді!", 
-      submission: newSubmission 
-    });
+    res.json(submission);
   } catch (error) {
-    console.error("Submission error details:", error);
-    res.status(500).json({ error: "Тапсырманы жіберу кезінде серверлік қате кетті" });
+    console.error("Submission error:", error);
+    res.status(500).json({ error: "Ошибка при сохранении решения" });
   }
 };
