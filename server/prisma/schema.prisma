@@ -87,6 +87,11 @@ model User {
   progress    UserProgress[]
   roadmaps    UserRoadmap[]
   submissions Submission[]
+
+  friends        Friendship[] @relation("UserFriends")
+  friendOf       Friendship[] @relation("FriendUsers")
+  challengesSent FriendChallenge[] @relation("Challenger")
+  challengesRecv FriendChallenge[] @relation("Opponent")
 }
 
 model Roadmap {
@@ -134,4 +139,38 @@ model UserProgress {
   node RoadmapNode @relation(fields: [nodeId], references: [id])
 
   @@unique([userId, nodeId])
+}
+
+model Friendship {
+  id        String   @id @default(uuid())
+  userId    Int
+  friendId  Int
+  createdAt DateTime @default(now())
+
+  user   User @relation("UserFriends", fields: [userId], references: [id])
+  friend User @relation("FriendUsers", fields: [friendId], references: [id])
+
+  @@unique([userId, friendId])
+}
+
+model FriendChallenge {
+  id                    String    @id @default(uuid())
+  challengerUserId      Int
+  opponentUserId        Int
+  roadmapId             String
+  challengerScore       Int
+  challengerDurationSec Int
+  opponentScore         Int?
+  opponentDurationSec   Int?
+  winnerUserId          Int?
+  status                String    @default("waiting_opponent") // "waiting_opponent" немесе "completed"
+  createdAt             DateTime  @default(now())
+  completedAt           DateTime?
+  isNotificationRead    Boolean   @default(true)
+
+  challenger User @relation("Challenger", fields: [challengerUserId], references: [id])
+  opponent   User @relation("Opponent", fields: [opponentUserId], references: [id])
+
+  roadmapTitle          String    // Тақырыпты сақтау үшін
+  quizData              Json?     // AI жасаған сұрақтар осында сақталады
 }

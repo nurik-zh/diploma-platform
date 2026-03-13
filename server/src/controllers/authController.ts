@@ -54,3 +54,23 @@ export const login = async (req: Request, res: Response) => {
     res.status(500).json({ message: "Ішкі қате" });
   }
 };
+
+export const getMe = async (req: Request, res: Response) => {
+  try {
+    // Токенді тексеретін middleware (authMiddleware) req.user ішіне userId салып жібереді деп күтеміз
+    const userId = Number((req as any).user.userId);
+
+    const user = await prisma.user.findUnique({ 
+      where: { id: userId } 
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "Пайдаланушы табылмады" });
+    }
+
+    // Сізде бұрыннан бар formatAuthUser функциясын қолданамыз
+    res.json(formatAuthUser(user));
+  } catch (error) {
+    res.status(500).json({ message: "Сервер қатесі" });
+  }
+};

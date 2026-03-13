@@ -8,6 +8,7 @@ import roadmapRoutes from './routes/roadmapRoutes.js';
 import topicRoutes from './routes/topicRoutes.js';
 import vacancyRoutes from './routes/vacancyRoutes.js';
 import leaderboardRoutes from './routes/leaderboardRoutes.js';
+import friendRoutes from './routes/friendRoutes.js';
 
 dotenv.config();
 const app = express();
@@ -130,6 +131,8 @@ app.use('/api/topics', topicRoutes);
 app.use('/api/vacancies', vacancyRoutes);
 
 app.use('/api/leaderboard', leaderboardRoutes);
+
+app.use('/api/friends', friendRoutes);
 
 const PORT = process.env.PORT || 5002;
 app.listen(PORT, () => {
