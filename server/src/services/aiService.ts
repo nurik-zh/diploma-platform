@@ -66,3 +66,38 @@ export const generateTopicContent = async (title: string, profession: string) =>
   const result = await model.generateContent(prompt);
   return JSON.parse(result.response.text().replace(/```json|```/g, "").trim());
 };
+
+export const generateChallengeQuiz = async (roadmapTitle: string) => {
+  try {
+    // aiService.ts ішіндегі prompt-ты жаңартыңыз
+    const prompt = `
+      Ты — эксперт в области IT и ментор. Составь тест из 5 сложных и актуальных вопросов по теме "${roadmapTitle}".
+      Вопросы должны быть на русском языке. У каждого вопроса должно быть 4 варианта ответа.
+      
+      Верни ответ ТОЛЬКО в формате JSON:
+      {
+        "questions": [
+          { 
+            "id": 1,
+            "question": "Текст вопроса?", 
+            "options": ["вариант 1", "вариант 2", "вариант 3", "вариант 4"], 
+            "correctOption": 0 
+          }
+        ]
+      }
+    `;
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+    
+    // JSON-ды тазарту (Markdown белгілерін алып тастау)
+    const cleanJson = text.replace(/```json|```/g, "").trim();
+    
+    return JSON.parse(cleanJson);
+  } catch (error) {
+    console.error("Gemini Error:", error);
+    // Егер AI қате берсе, Postman-да көру үшін null қайтармай, бос тізім қайтарайық
+    return { questions: [] };
+  }
+};
