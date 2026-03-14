@@ -19,23 +19,33 @@ const formatAuthUser = (user: any) => ({
 
 export const register = async (req: Request, res: Response) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, fullName, country, city, university } = req.body;
     const hashedPassword = await bcrypt.hash(password, 10);
     
     const user = await prisma.user.create({
-      data: { email, password: hashedPassword, fullName: email.split('@')[0] }
+      data: { 
+        email, 
+        password: hashedPassword, 
+        fullName: fullName || email.split('@')[0],
+        country: country || "Kazakhstan",
+        city: city || "Almaty",
+        university: university || "Satbayev University"
+      }
     });
 
-    const token = jwt.sign({ userId: user.id, role: user.role }, process.env.JWT_SECRET || 'secret_key');
+    const token = jwt.sign(
+      { userId: user.id, role: user.role }, 
+      process.env.JWT_SECRET || 'secret_key'
+    );
 
     res.status(201).json({ token, user: formatAuthUser(user) });
   } catch (error: any) {
-  console.error("FULL ERROR:", error); // Терминалдан қатені көру үшін
-  res.status(400).json({ 
-    message: "Тіркелу кезінде қате кетті", 
-    details: error.message 
-  });
-}
+    console.error("FULL ERROR:", error); 
+    res.status(400).json({ 
+      message: "Тіркелу кезінде қате кетті", 
+      details: error.message 
+    });
+  }
 };
 
 export const login = async (req: Request, res: Response) => {
