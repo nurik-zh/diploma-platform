@@ -1,10 +1,8 @@
-import { Router } from "express";
-import { getCandidateWorkLeaderboard, getLeaderboard } from "../controllers/leaderboardController.js";
+import { Router } from 'express';
+import { getLeaderboard } from '../controllers/leaderboardController.js';
+import { authenticateToken } from '../middleware/authMiddleware.js';
 
 const router = Router();
-
-router.get("/", getLeaderboard);
-router.get("/candidate-work", getCandidateWorkLeaderboard);
+router.get('/', authenticateToken, getLeaderboard); // /api/leaderboard
 
 export default router;
-
