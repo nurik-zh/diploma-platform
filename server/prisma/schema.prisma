@@ -174,3 +174,22 @@ model FriendChallenge {
   roadmapTitle          String    // Тақырыпты сақтау үшін
   quizData              Json?     // AI жасаған сұрақтар осында сақталады
 }
+
+model TopicQuestion {
+  id           String   @id @default(uuid())
+  topicId      String
+  question     String
+  options      String[]
+  correctIndex Int
+}
+model TestResult {
+  id        String   @id @default(uuid())
+
+  userId    String
+  topicId   String
+
+  score     Int
+  total     Int
+
+  createdAt DateTime @default(now())
+}

@@ -30,17 +30,43 @@ export const getTopicContent = async (req: any, res: Response) => {
   res.json([{ topicId: node.id, theory: node.theory }]);
 };
 
-export const getTopicTest = async (req: any, res: Response) => {
-  const { topicId } = req.params;
-  const node = await prisma.roadmapNode.findUnique({ where: { id: topicId } });
+// export const getTopicTest = async (req: any, res: Response) => {
+//   const { topicId } = req.params;
+//   const node = await prisma.roadmapNode.findUnique({ where: { id: topicId } });
   
-  if (!node || !node.testData) {
-    return res.status(404).json({ message: "Тест әлі жасалмаған. Алдымен /content шақырыңыз." });
-  }
+//   if (!node || !node.testData) {
+//     return res.status(404).json({ message: "Тест әлі жасалмаған. Алдымен /content шақырыңыз." });
+//   }
 
-  // Контракт: TopicTestsResponse []
-  res.json([{ topicId: node.id, questions: node.testData }]);
-};
+//   // Контракт: TopicTestsResponse []
+//   res.json([{ topicId: node.id, questions: node.testData }]);
+// };
+
+export const getTopicTest = async (req:any,res:any)=>{
+  try{
+
+    const topicId = req.params.topicId
+
+    const questions = await prisma.topicQuestion.findMany({
+      where:{
+        topicId: topicId
+      }
+    })
+
+    res.json({
+      questions
+    })
+
+  }catch(error){
+
+    console.error("TEST ERROR:",error)
+
+    res.status(500).json({
+      error:"Test load error"
+    })
+
+  }
+}
 
 export const submitTopicResult = async (req: any, res: Response) => {
   try {
@@ -68,6 +94,9 @@ export const submitTopicResult = async (req: any, res: Response) => {
     // 2. Егер сабақ бітсе, келесі сабақтың "құлпын" ашу (status: 'not_started')
     if (progress.status === "completed") {
       const currentNode = await prisma.roadmapNode.findUnique({ where: { id: topicId } });
+      if (!currentNode) {
+  return res.status(404).json({ message: "Topic not found" });
+}
       const nextNode = await prisma.roadmapNode.findFirst({
         where: {
           roadmapId: currentNode?.roadmapId,
@@ -109,4 +138,5 @@ export const getTopicById = async (req: any, res: Response) => {
     console.error(error)
     res.status(500).json({ error: "Topic error" })
   }
-}
+};
+

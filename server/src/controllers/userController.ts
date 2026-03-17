@@ -27,3 +27,4 @@ export const getProfile = async (req: any, res: Response) => {
     res.status(500).json({ error: "Профильді алу мүмкін болмады" });
   }
 };
+
