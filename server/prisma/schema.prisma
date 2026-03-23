@@ -88,18 +88,20 @@ model User {
   roadmaps    UserRoadmap[]
   submissions Submission[]
 
-  friends        Friendship[] @relation("UserFriends")
-  friendOf       Friendship[] @relation("FriendUsers")
+  friends        Friendship[]      @relation("UserFriends")
+  friendOf       Friendship[]      @relation("FriendUsers")
   challengesSent FriendChallenge[] @relation("Challenger")
   challengesRecv FriendChallenge[] @relation("Opponent")
+  
+  customAiRoadmaps CustomAiRoadmap[]
 }
 
 model Roadmap {
-  id          String   @id
+  id          String        @id
   title       String
   description String
   level       String
-  recommended Boolean  @default(false)
+  recommended Boolean       @default(false)
   nodes       RoadmapNode[]
 }
 
@@ -171,8 +173,8 @@ model FriendChallenge {
   challenger User @relation("Challenger", fields: [challengerUserId], references: [id])
   opponent   User @relation("Opponent", fields: [opponentUserId], references: [id])
 
-  roadmapTitle          String    // Тақырыпты сақтау үшін
-  quizData              Json?     // AI жасаған сұрақтар осында сақталады
+  roadmapTitle String // Тақырыпты сақтау үшін
+  quizData     Json? // AI жасаған сұрақтар осында сақталады
 }
 
 model TopicQuestion {
@@ -182,14 +184,28 @@ model TopicQuestion {
   options      String[]
   correctIndex Int
 }
+
 model TestResult {
-  id        String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  userId    String
-  topicId   String
+  userId  String
+  topicId String
 
-  score     Int
-  total     Int
+  score Int
+  total Int
 
   createdAt DateTime @default(now())
+}
+
+model CustomAiRoadmap {
+  id        String   @id @default(uuid())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  goal      String
+  // ИИ берген апталық жоспарларды JSON форматында сақтаймыз
+  content   Json     
+  createdAt DateTime @default(now())
+
+  @@map("custom_ai_roadmaps")
 }

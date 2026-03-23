@@ -30,92 +30,88 @@ export const getTopicContent = async (req: any, res: Response) => {
   res.json([{ topicId: node.id, theory: node.theory }]);
 };
 
-// export const getTopicTest = async (req: any, res: Response) => {
-//   const { topicId } = req.params;
-//   const node = await prisma.roadmapNode.findUnique({ where: { id: topicId } });
-  
-//   if (!node || !node.testData) {
-//     return res.status(404).json({ message: "Тест әлі жасалмаған. Алдымен /content шақырыңыз." });
-//   }
+export const getTopicTest = async (req: any, res: Response) => {
+  try {
+    const { topicId } = req.params;
 
-//   // Контракт: TopicTestsResponse []
-//   res.json([{ topicId: node.id, questions: node.testData }]);
-// };
+    const node = await prisma.roadmapNode.findUnique({
+      where: { id: topicId }
+    });
 
-export const getTopicTest = async (req:any,res:any)=>{
-  try{
+    if (!node) {
+      return res.status(404).json({ message: "Тақырып табылмады" });
+    }
 
-    const topicId = req.params.topicId
+    // Егер тест базада болса, қайтарамыз
+    if (node.testData && (node.testData as any).questions) {
+      return res.json(node.testData);
+    }
 
-    const questions = await prisma.topicQuestion.findMany({
-      where:{
-        topicId: topicId
+    // AI-ға жіберетін тақырып аты (label немесе title)
+    // Егер node.label болмаса, node.title қолданыңыз
+    const topicTitle = (node as any).label || (node as any).title || "IT Topic";
+    const profession = "Fullstack Developer";
+
+    console.log(`Generating AI content for topic: ${topicTitle}`);
+    
+    const aiResult = await generateTopicContent(topicTitle, profession);
+
+    // 4. Деректерді базаға сақтаймыз
+    // МАҢЫЗДЫ: 'content' орнына 'theory' деп жазыңыз
+    await prisma.roadmapNode.update({
+      where: { id: topicId },
+      data: {
+        theory: aiResult.theory, // Prisma-да 'theory' деп аталады
+        testData: { questions: aiResult.questions }
       }
-    })
+    });
 
-    res.json({
-      questions
-    })
+    res.json({ questions: aiResult.questions });
 
-  }catch(error){
-
-    console.error("TEST ERROR:",error)
-
-    res.status(500).json({
-      error:"Test load error"
-    })
-
+  } catch (error) {
+    console.error("GET TOPIC TEST ERROR:", error);
+    res.status(500).json({ error: "Сервер қатесі" });
   }
-}
+};
 
 export const submitTopicResult = async (req: any, res: Response) => {
   try {
     const { topicId } = req.params;
-    const { score } = req.body; // Фронтендтен келетін балл (мысалы 0-ден 100-ге дейін)
-    const userId = req.user.userId;
+    const { score } = req.body; // Фронтендтен келетін пайыз (0-100)
+    
+    // МАҢЫЗДЫ: userId-ді міндетті түрде санға (Int) айналдырамыз
+    const userId = parseInt(req.user.userId, 10); 
 
-    // 1. Прогрессті жаңарту немесе жасау
+    // Prisma-ға сұраныс жасау (topicId емес, nodeId қолданамыз)
     const progress = await prisma.userProgress.upsert({
       where: {
-        userId_nodeId: { userId, nodeId: topicId }
+        userId_nodeId: { // Schema-дағы unique constraint атауы
+          userId: userId,
+          nodeId: topicId // Schema-дағы баған атауы
+        }
       },
       update: {
-        status: score >= 70 ? "completed" : "in_progress", // 70-тен асса - бітті
-        score: score
+        score: score,
+        status: score >= 70 ? "completed" : "in_progress",
+        // updatedAt автоматты түрде жаңарады
       },
       create: {
-        userId,
-        nodeId: topicId,
-        status: score >= 70 ? "completed" : "in_progress",
-        score: score
+        userId: userId,
+        nodeId: topicId, // Schema-дағы баған атауы
+        score: score,
+        status: score >= 70 ? "completed" : "in_progress"
       }
     });
 
-    // 2. Егер сабақ бітсе, келесі сабақтың "құлпын" ашу (status: 'not_started')
-    if (progress.status === "completed") {
-      const currentNode = await prisma.roadmapNode.findUnique({ where: { id: topicId } });
-      if (!currentNode) {
-  return res.status(404).json({ message: "Topic not found" });
-}
-      const nextNode = await prisma.roadmapNode.findFirst({
-        where: {
-          roadmapId: currentNode?.roadmapId,
-          orderIndex: (currentNode?.orderIndex || 0) + 1
-        }
-      });
+    res.json({ 
+      status: "success", 
+      completed: score >= 70,
+      progress 
+    });
 
-      if (nextNode) {
-        await prisma.userProgress.upsert({
-          where: { userId_nodeId: { userId, nodeId: nextNode.id } },
-          update: { status: "not_started" },
-          create: { userId, nodeId: nextNode.id, status: "not_started" }
-        });
-      }
-    }
-
-    res.json({ message: "Нәтиже сақталды", status: progress.status });
   } catch (error) {
-    res.status(500).json({ message: "Прогрессті сақтау қатесі" });
+    console.error("SUBMIT ERROR:", error);
+    res.status(500).json({ error: "Нәтижені сақтау кезінде қате кетті" });
   }
 };
 
@@ -139,4 +135,3 @@ export const getTopicById = async (req: any, res: Response) => {
     res.status(500).json({ error: "Topic error" })
   }
 };
-

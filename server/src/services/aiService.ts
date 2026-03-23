@@ -7,7 +7,6 @@ dotenv.config();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-// src/services/aiService.ts
 export const getAIResponse = async (profession: string, score: number) => {
   try {
     // 10 баллдық жүйе бойынша деңгейді анықтау
@@ -46,25 +45,33 @@ export const getAIResponse = async (profession: string, score: number) => {
 };
 
 export const generateTopicContent = async (title: string, profession: string) => {
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+  try {
+    const prompt = `
+      Сен ${profession} маманына арналған менторсың. 
+      "${title}" тақырыбы бойынша:
+      1. Сапалы әрі қысқаша теориялық материал жаз (Markdown форматында).
+      2. Тақырыпты бекітуге арналған 3 сұрақтан тұратын тест жаса.
+      
+      Жауапты ТЕК қана таза JSON форматында қайтар, ешқандай түсініктеме мәтін қоспа.
+      {
+        "theory": "Мәтін...",
+        "questions": [
+          { "question": "сұрақ?", "options": ["а", "б", "в", "г"], "correctIndex": 0 }
+        ]
+      }
+    `;
 
-  const prompt = `
-    Сен ${profession} маманына арналған менторсың. 
-    "${title}" тақырыбы бойынша:
-    1. Сапалы әрі қысқаша теориялық материал жаз (Markdown форматында).
-    2. Тақырыпты бекітуге арналған 3 сұрақтан тұратын тест жаса.
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
     
-    Жауапты ТЕК мынадай JSON форматында бер:
-    {
-      "theory": "Мәтін осында...",
-      "questions": [
-        { "question": "сұрақ?", "options": ["а", "б", "в", "г"], "correctIndex": 0 }
-      ]
-    }
-  `;
-
-  const result = await model.generateContent(prompt);
-  return JSON.parse(result.response.text().replace(/```json|```/g, "").trim());
+    // Markdown-нан тазарту
+    const cleanJson = text.replace(/```json|```/g, "").trim();
+    return JSON.parse(cleanJson);
+  } catch (error) {
+    console.error("AI Generation failed:", error);
+    // Қате болған жағдайда бос құрылым қайтару (интерфейс құламауы үшін)
+    return { theory: "Мазмұн уақытша қолжетімсіз.", questions: [] };
+  }
 };
 
 export const generateChallengeQuiz = async (roadmapTitle: string) => {
@@ -99,5 +106,35 @@ export const generateChallengeQuiz = async (roadmapTitle: string) => {
     console.error("Gemini Error:", error);
     // Егер AI қате берсе, Postman-да көру үшін null қайтармай, бос тізім қайтарайық
     return { questions: [] };
+  }
+};
+
+export const generateCustomRoadmap = async (promptData: { title: string, goal: string, interests: string }) => {
+  try {
+    const prompt = `
+      Сен IT-менторсың. Пайдаланушының мақсаты: ${promptData.goal}.
+      Оның қызығушылықтары: ${promptData.interests}.
+      Оған арнап "${promptData.title}" деген тақырыпта нақты оқу жоспарын (Learning Path) құрастыр.
+      
+      Жауапты ТЕК JSON форматында қайтар. Форматы дәл мынадай болуы тиіс:
+      {
+        "title": "${promptData.title}",
+        "goal": "${promptData.goal}",
+        "milestones": [
+          "1-апта: Негіздерді меңгеру...",
+          "2-апта: Практикалық тапсырмалар...",
+          "3-апта: Күрделі концепциялар...",
+          "4-апта: Қорытынды жоба..."
+        ]
+      }
+    `;
+
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+    const cleanJson = text.replace(/```json|```/g, "").trim();
+    return JSON.parse(cleanJson);
+  } catch (error) {
+    console.error("AI Error:", error);
+    throw new Error("AI генерациясы сәтсіз аяқталды");
   }
 };

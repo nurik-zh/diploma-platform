@@ -7,7 +7,7 @@ const router = Router();
 
 router.get('/:topicId/content', authenticateToken, getTopicContent);
 router.get('/:topicId/test', authenticateToken, getTopicTest);
-router.post('/:topicId/result', authenticateToken, submitTopicResult);
+router.post('/:topicId/submit', authenticateToken, submitTopicResult);
 
 
 router.get('/:topicId', authenticateToken, getTopicById)

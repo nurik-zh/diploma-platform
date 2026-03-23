@@ -86,3 +86,37 @@ export const getProfile = async (req: any, res: Response) => {
     res.status(500).json({ message: "Профиль деректерін алуда қате шықты" });
   }
 };
+
+export const getUserYearActivity = async (req: any, res: Response) => {
+  try {
+    const userId = parseInt(req.user.userId, 10);
+
+    // Пайдаланушының "completed" болған барлық прогрестерін аламыз
+    const progress = await prisma.userProgress.findMany({
+      where: { 
+        userId,
+        status: "completed" 
+      },
+      select: { updatedAt: true }
+    });
+
+    // Деректерді күн бойынша топтастыру (Activity Heatmap үшін)
+    // Формат: { [date]: count } -> кейін [{date, count}] айналдырамыз
+    const activityMap: Record<string, number> = {};
+
+    progress.forEach(p => {
+      const date = p.updatedAt.toISOString().split('T')[0]; // YYYY-MM-DD
+      activityMap[date] = (activityMap[date] || 0) + 1;
+    });
+
+    const formattedActivity = Object.keys(activityMap).map(date => ({
+      date,
+      count: activityMap[date]
+    }));
+
+    res.json(formattedActivity);
+  } catch (error) {
+    console.error("Activity fetch error:", error);
+    res.status(500).json({ error: "Белсенділік деректерін алу мүмкін болмады" });
+  }
+};
