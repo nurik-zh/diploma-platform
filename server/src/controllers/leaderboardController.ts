@@ -7,10 +7,14 @@ export const getLeaderboard = async (req: any, res: Response) => {
   try {
     const currentUserId = req.user.userId;
 
-    // 1. Барлық пайдаланушыларды олардың прогресімен бірге алу
+    // 1. Барлық пайдаланушыларды олардың прогресімен ЖӘНЕ күнделікті тапсырмаларымен бірге алу
     const users = await prisma.user.findMany({
       include: {
         progress: true,
+        // ЖАҢА ЖОЛ: Лидерборд үшін де тек орындалғандарын аламыз
+        dailyTasks: {
+          where: { completed: true }
+        }
       }
     });
 
@@ -18,10 +22,15 @@ export const getLeaderboard = async (req: any, res: Response) => {
     const leaders = users.map((user) => {
       const topicResults = user.progress || [];
       const passedTestsCount = topicResults.filter(r => r.status === "completed").length;
+      
+      // Прогресстен жиналған ұпайлар
       const totalScorePoints = topicResults.reduce((sum, r) => sum + (r.score || 0), 0);
       
-      // Логика: әр бітірген тест үшін 140 ұпай + тесттегі балдары
-      const totalPoints = (passedTestsCount * 140) + totalScorePoints;
+      // Күнделікті тапсырмалардан жиналған ұпайлар
+      const dailyPoints = user.dailyTasks.reduce((sum, task) => sum + task.points, 0);
+      
+      // ЖАЛПЫ ҰПАЙ: (Бітірген тест * 140) + Тесттегі балдар + Күнделікті балдар
+      const totalPoints = (passedTestsCount * 140) + totalScorePoints + dailyPoints;
 
       return {
         userId: user.id,
@@ -30,13 +39,13 @@ export const getLeaderboard = async (req: any, res: Response) => {
         country: user.country,
         city: user.city,
         university: user.university,
-        points: totalPoints,
+        points: totalPoints, // <-- Біріккен ұпай
         completedTests: topicResults.length,
         passedTests: passedTestsCount,
         failedTests: topicResults.filter(r => r.status === "in_progress" && r.score < 70).length,
-        roadmapProgressPercent: 0, // Болашақта есептеуге болады
+        roadmapProgressPercent: 0, 
         badges: totalPoints > 1000 ? ["Fast Learner"] : ["Starter"],
-        rank: 0 // Сұрыптаудан кейін қойылады
+        rank: 0 
       };
     });
 

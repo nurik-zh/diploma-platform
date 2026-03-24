@@ -138,3 +138,36 @@ export const generateCustomRoadmap = async (promptData: { title: string, goal: s
     throw new Error("AI генерациясы сәтсіз аяқталды");
   }
 };
+
+export const generateDailyQuiz = async (roadmapTitle: string, nodeTitle: string) => {
+  try {
+    const prompt = `
+      Сен IT-менторсың. "${roadmapTitle}" бағытындағы "${nodeTitle}" тақырыбы бойынша 
+      күнделікті қайталауға арналған 3 сұрақтан тұратын мини-тест құрастыр. 
+      Сұрақтар орыс тілінде болуы тиіс.
+      
+      Жауапты ТЕК қана JSON форматында қайтар, ешқандай Markdown (बैक틱) немесе түсініктеме қоспа:
+      {
+        "questions": [
+          {
+            "id": "q1",
+            "question": "Текст вопроса?",
+            "options": [
+              { "id": "opt1", "label": "Вариант 1" },
+              { "id": "opt2", "label": "Вариант 2" }
+            ],
+            "correctOptionId": "opt1"
+          }
+        ]
+      }
+    `;
+
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+    const cleanJson = text.replace(/```json/g, "").replace(/```/g, "").trim();
+    return JSON.parse(cleanJson);
+  } catch (error) {
+    console.error("Daily Quiz AI Error:", error);
+    return null;
+  }
+};

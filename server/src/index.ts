@@ -9,6 +9,7 @@ import topicRoutes from './routes/topicRoutes.js';
 import vacancyRoutes from './routes/vacancyRoutes.js';
 import leaderboardRoutes from './routes/leaderboardRoutes.js';
 import friendRoutes from './routes/friendRoutes.js';
+import dailyTaskRoutes from './routes/dailyTaskRoutes.js'
 
 dotenv.config();
 const app = express();
@@ -133,6 +134,8 @@ app.use('/api/vacancies', vacancyRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
 
 app.use('/api/friends', friendRoutes);
+
+app.use('/api/daily-tasks', dailyTaskRoutes)
 
 const PORT = process.env.PORT || 5002;
 app.listen(PORT, () => {

@@ -8,7 +8,7 @@ export const getProfile = async (req: any, res: Response) => {
   try {
     const userId = parseInt(req.user.userId, 10); 
 
-    // 1. Пайдаланушыны барлық қажетті байланыстарымен алу
+    // 1. Пайдаланушыны прогресімен ЖӘНЕ орындалған күнделікті тапсырмаларымен алу
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: { 
@@ -16,17 +16,25 @@ export const getProfile = async (req: any, res: Response) => {
           where: { status: "completed" },
           include: {
             node: {
-              include: { roadmap: true } // Бағыттың атын білу үшін
+              include: { roadmap: true } 
             }
           }
-        } 
+        },
+        // ЖАҢА ЖОЛ: Тек орындалған күнделікті тапсырмаларды қосу
+        dailyTasks: {
+          where: { completed: true }
+        }
       }
     });
 
     if (!user) return res.status(404).json({ message: "Пайдаланушы табылмады" });
 
-    // 2. Жалпы ұпайды есептеу (барлық аяқталған түйіндердің ұпайларын қосу)
-    const totalPoints = user.progress.reduce((sum, p) => sum + p.score, 0);
+    const passedTestsCount = user.progress.length; // Өйткені жоғарыда тек status: "completed" алдық
+    const progressPoints = user.progress.reduce((sum, p) => sum + p.score, 0);
+    const dailyPoints = user.dailyTasks.reduce((sum, task) => sum + task.points, 0);
+    
+    // БІРЫҢҒАЙ ҰПАЙ: (Аяқталған тесттер * 140) + Тесттегі балдар + Күнделікті балдар
+    const totalPoints = (passedTestsCount * 140) + progressPoints + dailyPoints;
 
     // 3. Жетістіктерді динамикалық түрде құру
     const achievements = ["Зарегистирован на платформу"];
@@ -35,7 +43,6 @@ export const getProfile = async (req: any, res: Response) => {
     if (totalPoints > 300) achievements.push("Білімді маман (300+ ұпай)");
 
     // 4. Паутина знаний (Radar Chart) үшін дағдыларды есептеу
-    // Бағыт (Roadmap) атауларына қарап категорияларға бөлеміз
     const skillCategories: Record<string, { totalScore: number, count: number }> = {
       'Frontend': { totalScore: 0, count: 0 },
       'Backend': { totalScore: 0, count: 0 },
@@ -46,7 +53,7 @@ export const getProfile = async (req: any, res: Response) => {
 
     user.progress.forEach(p => {
       const roadmapTitle = p.node.roadmap.title.toLowerCase();
-      let category = 'Soft Skills'; // Әдепкі
+      let category = 'Soft Skills'; 
       
       if (roadmapTitle.includes('front') || roadmapTitle.includes('react') || roadmapTitle.includes('vue') || roadmapTitle.includes('html')) category = 'Frontend';
       else if (roadmapTitle.includes('back') || roadmapTitle.includes('node') || roadmapTitle.includes('python')) category = 'Backend';
@@ -63,7 +70,7 @@ export const getProfile = async (req: any, res: Response) => {
       return { id: key.toLowerCase().replace(' ', '-'), label: key, value: value > 100 ? 100 : value };
     });
 
-    const simpleSkillsList = radarSkills.filter(s => s.value > 20).map(s => s.label); // Тек 20%-дан асқандарды "Навыки" тізіміне шығарамыз
+    const simpleSkillsList = radarSkills.filter(s => s.value > 20).map(s => s.label);
 
     res.json({
       id: user.id,
@@ -76,7 +83,7 @@ export const getProfile = async (req: any, res: Response) => {
       university: user.university,
       firstLogin: user.firstLogin,
       completedTests: user.progress.length,
-      points: totalPoints,
+      points: totalPoints, // Фронтендке ортақ ұпай кетеді
       skills: simpleSkillsList.length > 0 ? simpleSkillsList : ["Начинающий"],
       radarSkills: radarSkills,
       achievements: achievements

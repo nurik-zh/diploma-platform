@@ -92,8 +92,10 @@ model User {
   friendOf       Friendship[]      @relation("FriendUsers")
   challengesSent FriendChallenge[] @relation("Challenger")
   challengesRecv FriendChallenge[] @relation("Opponent")
-  
+
   customAiRoadmaps CustomAiRoadmap[]
+
+  dailyTasks DailyTask[]
 }
 
 model Roadmap {
@@ -208,4 +210,25 @@ model CustomAiRoadmap {
   createdAt DateTime @default(now())
 
   @@map("custom_ai_roadmaps")
+}
+
+model DailyTask {
+  id           String    @id @default(uuid())
+  userId       Int
+  date         String    // Форматы: "YYYY-MM-DD"
+  roadmapId    String
+  roadmapTitle String
+  nodeId       String
+  nodeTitle    String
+  description  String
+  points       Int       @default(100)
+  completed    Boolean   @default(false)
+  completedAt  DateTime?
+  quizData     Json?     // ИИ генерациялаған сұрақтар осында сақталады
+
+  createdAt    DateTime  @default(now())
+
+  user         User      @relation(fields: [userId], references: [id])
+
+  @@unique([userId, date, nodeId]) // Бір күнде бір тақырыпқа бір ғана тапсырма
 }
