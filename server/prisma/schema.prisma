@@ -96,6 +96,12 @@ model User {
   customAiRoadmaps CustomAiRoadmap[]
 
   dailyTasks DailyTask[]
+
+  communityPosts    CommunityPost[]    @relation("UserPosts")
+  communityComments CommunityComment[] @relation("UserComments")
+  postLikes         PostLike[]         @relation("UserLikes")
+
+  verificationBookings VerificationBooking[]
 }
 
 model Roadmap {
@@ -231,4 +237,72 @@ model DailyTask {
   user         User      @relation(fields: [userId], references: [id])
 
   @@unique([userId, date, nodeId]) // Бір күнде бір тақырыпқа бір ғана тапсырма
+}
+
+model CommunityPost {
+  id               String   @id @default(uuid())
+  title            String
+  content          String
+  focusArea        String
+  tags             String[]
+  authorName       String
+  authorType       String   // "developer" немесе "company"
+  authorUserId     Int?
+  createdAt        DateTime @default(now())
+  publishedAt      DateTime?
+  moderationStatus String   @default("approved") // "pending" | "approved" | "rejected"
+  moderationNote   String?
+
+  author           User?    @relation("UserPosts", fields: [authorUserId], references: [id])
+  comments         CommunityComment[]
+  likes            PostLike[]
+
+  @@map("community_posts")
+}
+
+model CommunityComment {
+  id           String   @id @default(uuid())
+  postId       String
+  authorName   String
+  authorType   String
+  authorUserId Int?
+  text         String
+  createdAt    DateTime @default(now())
+
+  post         CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author       User?         @relation("UserComments", fields: [authorUserId], references: [id])
+
+  @@map("community_comments")
+}
+
+model PostLike {
+  id     String @id @default(uuid())
+  postId String
+  userId Int
+
+  post   CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user   User          @relation("UserLikes", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId]) // Бір адам бір постқа бір ғана лайк баса алады
+  @@map("post_likes")
+}
+
+model VerificationBooking {
+  id            String    @id @default(uuid())
+  userId        Int
+  slotId        String
+  roadmapId     String
+  roadmapTitle  String
+  mode          String    // "online" немесе "offline"
+  date          String
+  time          String
+  dateTimeIso   String
+  location      String
+  assessor      String
+  status        String    @default("scheduled") // scheduled, completed, cancelled
+  bookedAt      DateTime  @default(now())
+  completedAt   DateTime?
+  certificateId String?
+
+  user          User      @relation(fields: [userId], references: [id])
 }

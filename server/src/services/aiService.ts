@@ -171,3 +171,71 @@ export const generateDailyQuiz = async (roadmapTitle: string, nodeTitle: string)
     return null;
   }
 };
+
+export const generateAssessmentQuestions = async (roadmapTitle: string) => {
+  try {
+    const prompt = `
+      Ты IT-ментор. Сгенерируй тест для оценки уровня навыков по направлению "${roadmapTitle}".
+      Мне нужно 3 теоретических вопроса (где пользователь сам выберет уровень знаний от 1 до 3) и 2 практических вопроса, на которые пользователь должен дать развернутый текстовый ответ.
+      
+      Верни ответ ТОЛЬКО в формате JSON:
+      {
+        "theoryQuestions": [
+          "Текст теоретического вопроса 1?",
+          "Текст теоретического вопроса 2?",
+          "Текст теоретического вопроса 3?"
+        ],
+        "writtenQuestions": [
+          {
+            "id": "wq1",
+            "text": "Текст практического вопроса/кейса 1",
+            "placeholder": "Подсказка для поля ввода...",
+            "hint": "Краткая подсказка",
+            "keywords": ["ключевое слово 1", "ключевое слово 2"]
+          },
+          {
+            "id": "wq2",
+            "text": "Текст практического вопроса/кейса 2",
+            "placeholder": "Подсказка для поля ввода...",
+            "hint": "Краткая подсказка",
+            "keywords": ["ключевое слово 1", "ключевое слово 2"]
+          }
+        ]
+      }
+    `;
+
+    const result = await model.generateContent(prompt);
+    const cleanJson = result.response.text().replace(/```json|```/g, "").trim();
+    return JSON.parse(cleanJson);
+  } catch (error) {
+    console.error("Generate Assessment Error:", error);
+    throw new Error("Сұрақтар құрастыру мүмкін болмады");
+  }
+};
+
+export const evaluateAssessmentAnswers = async (roadmapTitle: string, writtenAnswers: {question: string, answer: string}[]) => {
+  try {
+    const prompt = `
+      Ты IT-ментор. Пользователь претендует на квалификацию по направлению "${roadmapTitle}".
+      Вот его развернутые ответы на практические вопросы:
+      ${JSON.stringify(writtenAnswers, null, 2)}
+      
+      Оцени эти ответы по 10-балльной шкале (общий балл за все ответы).
+      Затем определи его уровень: "Junior", "Junior Strong", "Middle", "Middle Strong" или "Senior".
+      
+      Верни ответ ТОЛЬКО в формате JSON:
+      {
+        "aiScore": 8,
+        "levelLabel": "Middle",
+        "feedback": "Твой краткий отзыв о его знаниях (1-2 предложения)"
+      }
+    `;
+
+    const result = await model.generateContent(prompt);
+    const cleanJson = result.response.text().replace(/```json|```/g, "").trim();
+    return JSON.parse(cleanJson);
+  } catch (error) {
+    console.error("Evaluate Assessment Error:", error);
+    return { aiScore: 0, levelLabel: "Junior", feedback: "Ошибка оценки" };
+  }
+};

@@ -10,6 +10,9 @@ import vacancyRoutes from './routes/vacancyRoutes.js';
 import leaderboardRoutes from './routes/leaderboardRoutes.js';
 import friendRoutes from './routes/friendRoutes.js';
 import dailyTaskRoutes from './routes/dailyTaskRoutes.js'
+import communityRoutes from './routes/communityRoutes.js';
+import verificationRoutes from './routes/verificationRoutes.js';
+import companyRoutes from './routes/companyRoutes.js';
 
 dotenv.config();
 const app = express();
@@ -136,6 +139,10 @@ app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api/friends', friendRoutes);
 
 app.use('/api/daily-tasks', dailyTaskRoutes)
+
+app.use('/api/community', communityRoutes);
+app.use('/api/verification', verificationRoutes);
+app.use('/api/company', companyRoutes);
 
 const PORT = process.env.PORT || 5002;
 app.listen(PORT, () => {

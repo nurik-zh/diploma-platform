@@ -105,23 +105,46 @@ export const getTodayTasks = async (req: any, res: Response) => {
 export const submitTask = async (req: Request, res: Response): Promise<any> => {
   try {
     const { taskId } = req.params;
-    const { optionId } = req.body;
+    const { optionId } = req.body; // Қолданушы таңдаған жауап ID-і
     const userId = (req as any).user.userId;
 
+    // 1. Тапсырманы базадан іздейміз (ішінде сұрақтар мен дұрыс жауап бар)
     const task = await prisma.dailyTask.findUnique({ where: { id: taskId } });
     
     if (!task || task.userId !== userId) {
       return res.status(404).json({ error: "Task not found" });
     }
 
+    // 2. Дұрыс жауапты анықтау
+    // quizData құрылымына байланысты (store-дағы getQuizForTask логикасы бойынша)
+    const quizData = task.quizData as any;
+    let correctAnswerId = null;
+
+    if (quizData.questions && Array.isArray(quizData.questions)) {
+      correctAnswerId = quizData.questions[0].correctOptionId; // Немесе 'answer' өрісі
+    } else {
+      correctAnswerId = quizData.correctOptionId;
+    }
+
+    // 3. ТЕКСЕРУ: Жіберілген жауап дұрыс па?
+    if (String(optionId) !== String(correctAnswerId)) {
+      // Егер қате болса, 400 қатесін қайтарамыз
+      return res.status(400).json({ 
+        success: false, 
+        message: "Қате жауап! Қайтадан көріңіз." 
+      });
+    }
+
+    // 4. Тек жауап дұрыс болғанда ғана статус өзгертіледі
     const updatedTask = await prisma.dailyTask.update({
       where: { id: taskId },
       data: { completed: true, completedAt: new Date() }
     });
-    
 
     return res.json({ success: true, task: updatedTask });
+
   } catch (error) {
+    console.error("Submit error:", error);
     return res.status(500).json({ error: 'Server error' });
   }
 };

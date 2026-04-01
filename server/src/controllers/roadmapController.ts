@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import pkg from '@prisma/client';
-import { getAIResponse, generateCustomRoadmap } from '../services/aiService.js';
+import { getAIResponse, generateCustomRoadmap, generateAssessmentQuestions, // ЖАҢА
+  evaluateAssessmentAnswers } from '../services/aiService.js';
 const { PrismaClient } = pkg;
 const prisma = new PrismaClient();
 
@@ -78,32 +79,74 @@ export const getRoadmapTree = async (req: any, res: Response) => {
 }
 
 export const getRoadmapAssessment = async (req: any, res: Response) => {
-  const { roadmapId } = req.params;
-  // Mock assessment (бұрынғы quizData)
-  res.json({
-    roadmapId,
-    title: "Бастапқы тест",
-    questions: [
-      {
-        id: "q1",
-        text: "HTML деген не?",
-        options: [{ id: "1", label: "Тіл", score: 10 }, { id: "2", label: "Қате", score: 0 }]
-      }
-    ]
-  });
+  try {
+    const { roadmapId } = req.params;
+    
+    // Базадан бағыттың атын алу (AI-ға тақырыпты жіберу үшін)
+    const roadmap = await prisma.roadmap.findUnique({ where: { id: roadmapId } });
+    
+    if (!roadmap) {
+      return res.status(404).json({ error: "Roadmap табылмады" });
+    }
+
+    // AI арқылы нақты осы бағытқа сұрақтар генерациялау
+    const aiQuestions = await generateAssessmentQuestions(roadmap.title);
+
+    // Фронтендке сұрақтарды қайтару
+    res.json({
+      roadmapId,
+      title: `${roadmap.title} бойынша білімді бағалау`,
+      theoryQuestions: aiQuestions.theoryQuestions,
+      writtenQuestions: aiQuestions.writtenQuestions
+    });
+
+  } catch (error) {
+    console.error("Ассессмент генерациялау қатесі:", error);
+    
+    // ЕГЕР AI ІСТЕМЕЙ ҚАЛСА (Конфликт болмас үшін Fallback/Mock дерек қайтарамыз)
+    res.json({
+      roadmapId,
+      title: "Бастапқы тест (Резервтік)",
+      theoryQuestions: ["HTML деген не?", "CSS деген не?"],
+      writtenQuestions: [
+        { id: "wq1", text: "React пен Vue айырмашылығын жазыңыз", placeholder: "Жауап...", hint: "", keywords: [] }
+      ]
+    });
+  }
 };
 
 export const submitAssessment = async (req: any, res: Response) => {
   try {
     const { roadmapId } = req.params;
-    const { answers } = req.body;
     const userId = parseInt(req.user.userId, 10);
+    
+    // Фронтендтен келетін деректер (Жаңа формат немесе Ескі формат болуы мүмкін)
+    const { theoryScore, writtenAnswers, answers } = req.body;
 
-    // 1. Ұпайды есептеу
-    let score = Object.values(answers).reduce((a: any, b: any) => a + b, 0) as number;
-    const assignedLevel = score > 10 ? "Intermediate" : "Beginner";
+    let finalScore = 0;
+    let assignedLevel = "Junior";
+    let aiFeedback = "Бастапқы деңгей";
 
-    // 2. Пайдаланушының коллекциясына қосу (upsert арқылы қайталанудың алдын алу)
+    // 1-ЖАҒДАЙ: ЖАҢА AI ФОРМАТЫ КЕЛСЕ (theoryScore + writtenAnswers)
+    if (writtenAnswers && Array.isArray(writtenAnswers)) {
+      const roadmap = await prisma.roadmap.findUnique({ where: { id: roadmapId } });
+      
+      if (roadmap) {
+        // AI арқылы жазбаша мәтінді бағалау
+        const evaluation = await evaluateAssessmentAnswers(roadmap.title, writtenAnswers);
+        
+        finalScore = (theoryScore || 0) + (evaluation.aiScore || 0);
+        assignedLevel = evaluation.levelLabel || "Junior";
+        aiFeedback = evaluation.feedback || "Бағаланды";
+      }
+    } 
+    // 2-ЖАҒДАЙ: ЕСКІ ФОРМАТ КЕЛСЕ (Конфликтті болдырмау үшін)
+    else if (answers) {
+      finalScore = Object.values(answers).reduce((a: any, b: any) => a + b, 0) as number;
+      assignedLevel = finalScore > 10 ? "Middle" : "Junior";
+    }
+
+    // Базаға сақтау немесе жаңарту (Upsert логикасы сақталды)
     const existingEntry = await prisma.userRoadmap.findFirst({
       where: { userId, roadmapId }
     });
@@ -119,19 +162,17 @@ export const submitAssessment = async (req: any, res: Response) => {
       });
     }
 
-    // БҰЛ ЖЕРДЕ AI ГЕНЕРАЦИЯСЫН УАҚЫТША АЛЫП ТАСТАЙМЫЗ. 
-    // Себебі дипломдық жобаның негізгі Roadmap-тары Seed арқылы салынған. 
-    // Егер AI-мен динамикалық құру қажет болса, оны бөлек Background процесс қылу керек.
-
-    // 3. Сәтті жауапты бірден қайтару (Фронтенд қатып қалмауы үшін)
+    // Фронтендтің жаңа Vue-компоненті күтетін жауапты қайтару
     res.json({ 
       roadmapId, 
-      level: assignedLevel, 
-      message: "Бағыт сәтті қосылды" 
+      score: finalScore,
+      levelLabel: assignedLevel, 
+      feedback: aiFeedback,
+      message: "Деңгей сәтті анықталды" 
     });
 
   } catch (error) {
-    console.error("Ассессмент жіберу қатесі:", error);
+    console.error("Ассессмент сақтау қатесі:", error);
     res.status(500).json({ error: "Тест нәтижесін сақтау мүмкін болмады" });
   }
 };
@@ -428,5 +469,31 @@ export const getUserAiRoadmaps = async (req: any, res: any) => {
   } catch (error) {
     console.error("Fetch AI Roadmaps Error:", error);
     res.status(500).json({ error: "Сақталған карталарды алу мүмкін болмады" });
+  }
+};
+
+// roadmapController.ts файлының ең астына қосасыз
+export const getUserSkillLevels = async (req: any, res: Response) => {
+  try {
+    const userId = parseInt(req.user.userId, 10);
+    
+    // Базадан осы пайдаланушының барлық бағыттарын аламыз
+    const userRoadmaps = await prisma.userRoadmap.findMany({
+      where: { userId }
+    });
+
+    // Фронтенд күтетін форматқа (DirectionLevelResult) айналдырамыз
+    const result = userRoadmaps.map(ur => ({
+      roadmapId: ur.roadmapId,
+      roadmapTitle: ur.roadmapId,
+      levelLabel: ur.assignedLevel, // Базада сақталған "Middle", "Junior"
+      score: 0,
+      updatedAt: ur.createdAt.toISOString()
+    }));
+
+    res.json(result);
+  } catch (error) {
+    console.error("getUserSkillLevels қатесі:", error);
+    res.status(500).json({ error: "Деңгейлерді алу мүмкін болмады" });
   }
 };
