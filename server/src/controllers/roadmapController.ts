@@ -6,23 +6,33 @@ const { PrismaClient } = pkg;
 const prisma = new PrismaClient();
 
 export const getRoadmaps = async (req: any, res: Response) => {
-  const roadmaps = await prisma.roadmap.findMany();
-  res.json(roadmaps);
+  try {
+    const userId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+    const allRoadmaps = await prisma.roadmap.findMany();
+
+    if (userId) {
+      // Қолданушының өзіне тиесілі бағыттар тізімін алу
+      const userRoadmapLinks = await prisma.userRoadmap.findMany({ 
+        where: { userId } 
+      });
+      const userRoadmapIds = userRoadmapLinks.map(ur => ur.roadmapId);
+
+      // Басқа адамдардың "ai_" префиксі бар бағыттарын жалпы каталогтан жасыру
+      // (Яғни, стандарттыларды ЖӘНЕ тек өзі қосқан AI бағыттарын ғана қалдырамыз)
+      const filtered = allRoadmaps.filter(r => 
+        !r.id.startsWith("ai_") || userRoadmapIds.includes(r.id)
+      );
+      return res.json(filtered);
+    }
+
+    // Авторизациясыз сұрау болса, тек қана стандартты бағыттар жіберіледі
+    const filtered = allRoadmaps.filter(r => !r.id.startsWith("ai_"));
+    res.json(filtered);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Roadmaps алу қатесі" });
+  }
 };
-//   const nodes = await prisma.roadmapNode.findMany({ orderBy: { orderIndex: 'asc' } });
-  
-//   // Контракт: Record<string, RoadmapNode[]>
-//   const tree: Record<string, any[]> = {};
-//   nodes.forEach(node => {
-//     if (!tree[node.roadmapId]) tree[node.roadmapId] = [];
-//     tree[node.roadmapId].push({
-//       id: node.id,
-//       title: node.title,
-//       status: "locked" // Фронтенд үшін, прогрессті қоссаң 'in_progress' болады
-//     });
-//   });
-//   res.json(tree);
-// };
 
 export const getRoadmapTree = async (req: any, res: Response) => {
   try {
@@ -64,8 +74,7 @@ export const getRoadmapTree = async (req: any, res: Response) => {
       if (!tree[node.roadmapId]) tree[node.roadmapId] = []
 
       tree[node.roadmapId].push({
-        id: node.id,
-        title: node.title,
+        ...node,
         status: userNodeProgress?.status ?? "locked"
       })
     }
@@ -79,8 +88,9 @@ export const getRoadmapTree = async (req: any, res: Response) => {
 }
 
 export const getRoadmapAssessment = async (req: any, res: Response) => {
+  const { roadmapId } = req.params;
   try {
-    const { roadmapId } = req.params;
+    
     
     // Базадан бағыттың атын алу (AI-ға тақырыпты жіберу үшін)
     const roadmap = await prisma.roadmap.findUnique({ where: { id: roadmapId } });
@@ -97,7 +107,8 @@ export const getRoadmapAssessment = async (req: any, res: Response) => {
       roadmapId,
       title: `${roadmap.title} бойынша білімді бағалау`,
       theoryQuestions: aiQuestions.theoryQuestions,
-      writtenQuestions: aiQuestions.writtenQuestions
+      writtenQuestions: aiQuestions.writtenQuestions,
+      questions: aiQuestions.questions || []
     });
 
   } catch (error) {
@@ -146,30 +157,50 @@ export const submitAssessment = async (req: any, res: Response) => {
       assignedLevel = finalScore > 10 ? "Middle" : "Junior";
     }
 
-    // Базаға сақтау немесе жаңарту (Upsert логикасы сақталды)
-    const existingEntry = await prisma.userRoadmap.findFirst({
+    const existingSkill = await prisma.userSkillLevel.findFirst({
       where: { userId, roadmapId }
     });
 
-    if (!existingEntry) {
-      await prisma.userRoadmap.create({
-        data: { userId, roadmapId, assignedLevel }
+    const finalScoreInt = Math.floor(Number(finalScore) || 0);
+
+    if (existingSkill) {
+      await prisma.userSkillLevel.update({
+        where: { id: existingSkill.id },
+        data: { levelLabel: assignedLevel, score: finalScoreInt }
       });
     } else {
+      await prisma.userSkillLevel.create({
+        data: { userId, roadmapId, levelLabel: assignedLevel, score: finalScore }
+      });
+    }
+
+    const existingRoadmap = await prisma.userRoadmap.findFirst({
+      where: { userId, roadmapId }
+    });
+    if (!existingRoadmap) {
+      // Егер бұл бағыт тізімде жоқ болса, оны жаңадан қосамыз
+      await prisma.userRoadmap.create({
+        data: {
+          userId,
+          roadmapId,
+          assignedLevel
+        }
+      });
+    } else {
+      // Егер бар болса, деңгейін ғана жаңартамыз (мысалы Junior-дан Middle-ге өтсе)
       await prisma.userRoadmap.update({
-        where: { id: existingEntry.id },
+        where: { id: existingRoadmap.id },
         data: { assignedLevel }
       });
     }
 
-    // Фронтендтің жаңа Vue-компоненті күтетін жауапты қайтару
     res.json({ 
       roadmapId, 
       score: finalScore,
       levelLabel: assignedLevel, 
       feedback: aiFeedback,
-      message: "Деңгей сәтті анықталды" 
-    });
+      message: "Деңгей сәтті сақталды!" 
+    })
 
   } catch (error) {
     console.error("Ассессмент сақтау қатесі:", error);
@@ -322,6 +353,8 @@ export const completeOnboarding = async (req: any, res: Response) => {
   }
 };
 
+// roadmapController.ts ішіндегі completeNode функциясы
+
 export const completeNode = async (req: any, res: Response) => {
   try {
     const userId = req.user.userId
@@ -331,53 +364,37 @@ export const completeNode = async (req: any, res: Response) => {
       where: { id: nodeId }
     })
 
-    if (!node) {
-      return res.status(404).json({ error: "Node not found" })
-    }
+    if (!node) return res.status(404).json({ error: "Node not found" })
 
-    // 1️⃣ отметить тему completed
-    await prisma.userProgress.update({
-      where: {
-        userId_nodeId: {
-          userId,
-          nodeId
-        }
-      },
-      data: {
-        status: "completed"
-      }
+    // 1️⃣ Қазіргі тақырыпты "completed" жасау
+    await prisma.userProgress.upsert({
+      where: { userId_nodeId: { userId, nodeId } },
+      update: { status: "completed" },
+      create: { userId, nodeId, status: "completed" }
     })
 
-    // 2️⃣ найти следующую тему
+    // 2️⃣ КЕЛЕСІ ТАҚЫРЫПТЫ ТАБУ (Дұрыс жолы: қазіргіден үлкен ең біріншісі)
     const nextNode = await prisma.roadmapNode.findFirst({
       where: {
         roadmapId: node.roadmapId,
-        orderIndex: node.orderIndex + 1
-      }
+        orderIndex: { gt: node.orderIndex } // gt - "greater than" (үлкен)
+      },
+      orderBy: { orderIndex: 'asc' } // Ең жақынын алу үшін
     })
 
-    // 3️⃣ открыть следующую
+    // 3️⃣ Егер келесі тақырып болса, оны "not_started" (ашық) күйіне ауыстыру
     if (nextNode) {
       await prisma.userProgress.upsert({
-        where: {
-          userId_nodeId: {
-            userId,
-            nodeId: nextNode.id
-          }
+        where: { userId_nodeId: { userId, nodeId: nextNode.id } },
+        update: { 
+          // Егер ол бұрын бітіп қоймаса ғана ашамыз
+          status: { set: 'not_started' } 
         },
-        update: {
-          status: "not_started"
-        },
-        create: {
-          userId,
-          nodeId: nextNode.id,
-          status: "not_started"
-        }
+        create: { userId, nodeId: nextNode.id, status: "not_started" }
       })
     }
 
     res.json({ success: true })
-
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: "Completion error" })
@@ -472,28 +489,101 @@ export const getUserAiRoadmaps = async (req: any, res: any) => {
   }
 };
 
-// roadmapController.ts файлының ең астына қосасыз
 export const getUserSkillLevels = async (req: any, res: Response) => {
   try {
     const userId = parseInt(req.user.userId, 10);
     
-    // Базадан осы пайдаланушының барлық бағыттарын аламыз
-    const userRoadmaps = await prisma.userRoadmap.findMany({
+    // Енді UserRoadmap-тан емес, жаңа UserSkillLevel кестесінен аламыз!
+    const skillLevels = await prisma.userSkillLevel.findMany({
       where: { userId }
     });
 
-    // Фронтенд күтетін форматқа (DirectionLevelResult) айналдырамыз
-    const result = userRoadmaps.map(ur => ({
-      roadmapId: ur.roadmapId,
-      roadmapTitle: ur.roadmapId,
-      levelLabel: ur.assignedLevel, // Базада сақталған "Middle", "Junior"
-      score: 0,
-      updatedAt: ur.createdAt.toISOString()
+    const result = skillLevels.map(skill => ({
+      roadmapId: skill.roadmapId,
+      roadmapTitle: skill.roadmapId,
+      levelLabel: skill.levelLabel, 
+      score: skill.score,
+      updatedAt: skill.updatedAt.toISOString()
     }));
 
     res.json(result);
   } catch (error) {
     console.error("getUserSkillLevels қатесі:", error);
     res.status(500).json({ error: "Деңгейлерді алу мүмкін болмады" });
+  }
+};
+
+export const convertAndAddAiRoadmap = async (req: any, res: Response) => {
+  try {
+    const userId = parseInt(req.user.userId, 10);
+    const { customRoadmapId } = req.body;
+
+    // 1. ИИ жасаған картаны базадан табу
+    const customRoadmap = await prisma.customAiRoadmap.findUnique({
+      where: { id: customRoadmapId }
+    });
+
+    if (!customRoadmap) {
+      return res.status(404).json({ error: "AI Roadmap табылмады" });
+    }
+
+    // 2. Бірегей ID жасаймыз (мысалы, "ai_" префиксімен)
+    const standardRoadmapId = `ai_${customRoadmap.id}`;
+
+    // 3. Бұл бағыт бұрыннан айналдырылған ба, жоқ па тексереміз
+    let roadmap = await prisma.roadmap.findUnique({
+      where: { id: standardRoadmapId }
+    });
+
+    if (!roadmap) {
+      // Егер жоқ болса, кәдімгі Roadmap етіп құру
+      roadmap = await prisma.roadmap.create({
+        data: {
+          id: standardRoadmapId,
+          title: customRoadmap.title,
+          description: customRoadmap.goal || "AI генерациялаған жеке бағыт",
+          level: "Beginner",
+          recommended: false
+        }
+      });
+
+      // JSON ішіндегі апталық/тақырыптық жоспарларды Node етіп сақтау
+      const milestones = customRoadmap.content as any[]; 
+      
+      if (Array.isArray(milestones)) {
+        const nodesData = milestones.map((m: any, index: number) => ({
+          roadmapId: standardRoadmapId,
+          title: m.title || m.name || `Тақырып ${index + 1}`,
+          description: m.description || m.details || "",
+          orderIndex: index + 1,
+          level: "beginner"
+        }));
+
+        await prisma.roadmapNode.createMany({
+          data: nodesData
+        });
+      }
+    }
+
+    // 4. Оны "Мои направления" (UserRoadmap) қатарына қосу
+    const existingRelation = await prisma.userRoadmap.findFirst({
+      where: { userId, roadmapId: standardRoadmapId }
+    });
+
+    if (!existingRelation) {
+      await prisma.userRoadmap.create({
+        data: {
+          userId,
+          roadmapId: standardRoadmapId,
+          assignedLevel: "Beginner" 
+        }
+      });
+    }
+
+    res.json({ success: true, newRoadmapId: standardRoadmapId });
+
+  } catch (error) {
+    console.error("AI Roadmap конвертациялау қатесі:", error);
+    res.status(500).json({ error: "Бағытты қосу мүмкін болмады" });
   }
 };

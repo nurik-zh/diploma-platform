@@ -13,18 +13,19 @@ import dailyTaskRoutes from './routes/dailyTaskRoutes.js'
 import communityRoutes from './routes/communityRoutes.js';
 import verificationRoutes from './routes/verificationRoutes.js';
 import companyRoutes from './routes/companyRoutes.js';
+import cron from 'node-cron';
+import { fetchAndSaveHHVacancies } from './services/hhService.js';
 
 dotenv.config();
 const app = express();
 
 app.use(cors({
-    origin: 'http://localhost:5173', // Фронтендтің мекенжайы
+    origin: true,
     credentials: true
 }));
 
 app.use(express.json());
 
-// Swagger Configuration (Таза JSON, YAML қатесі мүлдем болмайды)
 const swaggerDocument = {
   openapi: '3.0.0',
   info: {
@@ -124,10 +125,8 @@ const swaggerDocument = {
   }
 };
 
-// Swagger UI қосу
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
-// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/roadmaps', roadmapRoutes);
@@ -144,7 +143,14 @@ app.use('/api/community', communityRoutes);
 app.use('/api/verification', verificationRoutes);
 app.use('/api/company', companyRoutes);
 
+// fetchAndSaveHHVacancies();
+cron.schedule('0 2 */4 * *', async () => {
+  console.log("Автоматты жаңарту уақыты келді...");
+  await fetchAndSaveHHVacancies();
+});
+
 const PORT = process.env.PORT || 5002;
+
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on http://localhost:${PORT}`);
   console.log(`📖 API Documentation: http://localhost:${PORT}/api-docs`);

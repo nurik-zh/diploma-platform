@@ -9,6 +9,9 @@ router.get('/:id', vacancyController.getVacancyById);
 router.get('/:id/tasks', authenticateToken, vacancyController.getVacancyRealTasks);
 router.post('/:id/tasks/:taskId/submission',authenticateToken, vacancyController.submitTask);
 
+// Басқа роуттардың қасына қосыңыз
+router.post('/:id/generate-ai-prep',authenticateToken, vacancyController.generateAIPrep);
+
 router.get('/:id/leaderboard', vacancyController.getVacancyTaskLeaderboard);
 
 export default router;

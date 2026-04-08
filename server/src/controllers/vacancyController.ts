@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { generateVacancyPrepData } from '../services/aiService.js';
 
 const prisma = new PrismaClient();
 
@@ -172,5 +173,44 @@ export const submitTask = async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Submission error:", error);
     res.status(500).json({ error: "Ошибка при сохранении решения" });
+  }
+};
+
+export const generateAIPrep = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // 1. Вакансияны табу
+    const vacancy = await prisma.vacancy.findUnique({ where: { id } });
+    if (!vacancy) return res.status(404).json({ error: "Vacancy not found" });
+
+    // 2. AI арқылы сұрақтар мен тест генерациялау
+    const aiData = await generateVacancyPrepData(vacancy.title, vacancy.company);
+
+    if (!aiData) throw new Error("AI Generation failed");
+
+    // 3. Сұрақтарды базаға сақтау (Relation бойынша)
+    // Ескерту: Сұрақтар мен Тесттер базада жеке кесте болса:
+    await prisma.question.createMany({
+      data: aiData.questions.map((q: any) => ({
+        vacancyId: id,
+        question: q.question,
+        answer: q.answer
+      }))
+    });
+
+    await prisma.test.createMany({
+      data: aiData.test.map((t: any) => ({
+        vacancyId: id,
+        question: t.question,
+        options: t.options,
+        correctAnswerIndex: t.correctAnswerIndex
+      }))
+    });
+
+    res.json(aiData);
+  } catch (error) {
+    console.error("AI Prep Error:", error);
+    res.status(500).json({ error: "Генерация кезінде қате кетті" });
   }
 };
