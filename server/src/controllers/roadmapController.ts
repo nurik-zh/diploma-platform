@@ -1,9 +1,93 @@
 import { Response } from 'express';
 import pkg from '@prisma/client';
-import { getAIResponse, generateCustomRoadmap, generateAssessmentQuestions, // ЖАҢА
-  evaluateAssessmentAnswers } from '../services/aiService.js';
+import {
+  getAIResponse,
+  generateCustomRoadmap,
+  generateAssessmentQuestions,
+  evaluateAssessmentAnswers,
+  evaluateAssessmentWithQuiz,
+  type GeneratedAssessment,
+} from '../services/aiService.js';
+import {
+  createAssessmentSession,
+  takeAssessmentSession,
+  type AssessmentQuizQuestion,
+  type AssessmentWrittenQuestion,
+} from '../assessmentSessionStore.js';
 const { PrismaClient } = pkg;
 const prisma = new PrismaClient();
+
+function normalizeAssessmentPayload(raw: unknown, roadmapTitle: string): GeneratedAssessment {
+  const o = raw as Record<string, unknown>;
+  const quizRaw = Array.isArray(o?.quizQuestions) ? (o.quizQuestions as unknown[]) : [];
+  const writtenRaw = Array.isArray(o?.writtenQuestions) ? (o.writtenQuestions as unknown[]) : [];
+
+  const quizQuestions: AssessmentQuizQuestion[] = quizRaw.map((item, i) => {
+    const q = item as Record<string, unknown>;
+    const opts = Array.isArray(q.options) ? (q.options as unknown[]).map((x) => String(x)) : [];
+    const options = opts.slice(0, 4);
+    while (options.length < 4) options.push(`Вариант ${options.length + 1}`);
+    let correctIndex = typeof q.correctIndex === 'number' ? q.correctIndex : parseInt(String(q.correctOption ?? q.correctIndex ?? 0), 10);
+    if (!Number.isFinite(correctIndex)) correctIndex = 0;
+    correctIndex = Math.max(0, Math.min(options.length - 1, correctIndex));
+    return {
+      id: String(q.id ?? `q${i + 1}`),
+      question: String(q.question ?? `Вопрос ${i + 1} по ${roadmapTitle}`),
+      options,
+      correctIndex,
+    };
+  });
+
+  const writtenQuestions: AssessmentWrittenQuestion[] = writtenRaw.map((item, i) => {
+    const w = item as Record<string, unknown>;
+    return {
+      id: String(w.id ?? `wq${i + 1}`),
+      text: String(w.text ?? `Развёрнутый вопрос ${i + 1}`),
+      placeholder: w.placeholder ? String(w.placeholder) : undefined,
+      hint: w.hint ? String(w.hint) : undefined,
+      keywords: Array.isArray(w.keywords) ? (w.keywords as unknown[]).map(String) : undefined,
+    };
+  });
+
+  return { quizQuestions, writtenQuestions };
+}
+
+function fallbackAssessment(roadmapTitle: string): GeneratedAssessment {
+  return {
+    quizQuestions: [
+      {
+        id: 'q1',
+        question: `Что ближе всего к цели обучения по направлению «${roadmapTitle}»?`,
+        options: ['Изучить основы и практиковаться', 'Только читать теорию', 'Пропускать практику', 'Не определять цели'],
+        correctIndex: 0,
+      },
+      {
+        id: 'q2',
+        question: 'Как лучше закреплять знания после урока?',
+        options: ['Повторить конспект и решить задачи', 'Ничего не делать', 'Только смотреть видео', 'Учить всё наизусть без понимания'],
+        correctIndex: 0,
+      },
+      {
+        id: 'q3',
+        question: 'Что из перечисленного чаще всего важно в командной разработке?',
+        options: ['Общение и код-ревью', 'Работа в полном одиночестве', 'Игнорировать стиль кода', 'Избегать документации'],
+        correctIndex: 0,
+      },
+    ],
+    writtenQuestions: [
+      {
+        id: 'wq1',
+        text: `Кратко опишите, что вы уже знаете по теме «${roadmapTitle}» и что хотите освоить дальше.`,
+        placeholder: '2–4 предложения...',
+      },
+      {
+        id: 'wq2',
+        text: 'Приведите пример реальной задачи, которую вы бы хотели уметь решать после обучения.',
+        placeholder: 'Опишите задачу...',
+      },
+    ],
+  };
+}
 
 export const getRoadmaps = async (req: any, res: Response) => {
   const roadmaps = await prisma.roadmap.findMany();
@@ -26,15 +110,15 @@ export const getRoadmaps = async (req: any, res: Response) => {
 
 export const getRoadmapTree = async (req: any, res: Response) => {
   try {
-    const userId = req.user.userId
+    const userId = parseInt(req.user.userId, 10)
 
     const nodes = await prisma.roadmapNode.findMany({
-      orderBy: { orderIndex: 'asc' }
+      orderBy: [{ roadmapId: 'asc' }, { orderIndex: 'asc' }],
     })
 
     // получить прогресс пользователя
     const progress = await prisma.userProgress.findMany({
-      where: { userId }
+      where: { userId },
     })
 
     const tree: Record<string, any[]> = {}
@@ -58,6 +142,35 @@ export const getRoadmapTree = async (req: any, res: Response) => {
               status: "not_started"
             }
           })
+          progress.push(userNodeProgress)
+        } else {
+          // предыдущая тема пройдена, а запись для этой ноды не создалась (старые клиенты / до фикса submitTopicResult)
+          const prevNode = await prisma.roadmapNode.findFirst({
+            where: {
+              roadmapId: node.roadmapId,
+              orderIndex: node.orderIndex - 1,
+            },
+          })
+          if (prevNode) {
+            const prevProgress = progress.find((p) => p.nodeId === prevNode.id)
+            if (prevProgress?.status === 'completed') {
+              userNodeProgress = await prisma.userProgress.upsert({
+                where: {
+                  userId_nodeId: {
+                    userId,
+                    nodeId: node.id,
+                  },
+                },
+                update: { status: 'not_started' },
+                create: {
+                  userId,
+                  nodeId: node.id,
+                  status: 'not_started',
+                },
+              })
+              progress.push(userNodeProgress)
+            }
+          }
         }
       }
 
@@ -79,38 +192,57 @@ export const getRoadmapTree = async (req: any, res: Response) => {
 }
 
 export const getRoadmapAssessment = async (req: any, res: Response) => {
+  const { roadmapId } = req.params;
+  const userId = parseInt(req.user.userId, 10);
   try {
-    const { roadmapId } = req.params;
-    
-    // Базадан бағыттың атын алу (AI-ға тақырыпты жіберу үшін)
     const roadmap = await prisma.roadmap.findUnique({ where: { id: roadmapId } });
-    
+
     if (!roadmap) {
       return res.status(404).json({ error: "Roadmap табылмады" });
     }
 
-    // AI арқылы нақты осы бағытқа сұрақтар генерациялау
     const aiQuestions = await generateAssessmentQuestions(roadmap.title);
+    let payload = normalizeAssessmentPayload(aiQuestions, roadmap.title);
+    if (payload.quizQuestions.length === 0) {
+      payload = fallbackAssessment(roadmap.title);
+    }
+    if (payload.writtenQuestions.length === 0) {
+      payload = { ...payload, writtenQuestions: fallbackAssessment(roadmap.title).writtenQuestions };
+    }
 
-    // Фронтендке сұрақтарды қайтару
-    res.json({
+    const sessionId = createAssessmentSession({
+      userId,
       roadmapId,
-      title: `${roadmap.title} бойынша білімді бағалау`,
-      theoryQuestions: aiQuestions.theoryQuestions,
-      writtenQuestions: aiQuestions.writtenQuestions
+      quizQuestions: payload.quizQuestions,
+      writtenQuestions: payload.writtenQuestions,
     });
 
-  } catch (error) {
-    console.error("Ассессмент генерациялау қатесі:", error);
-    
-    // ЕГЕР AI ІСТЕМЕЙ ҚАЛСА (Конфликт болмас үшін Fallback/Mock дерек қайтарамыз)
     res.json({
       roadmapId,
-      title: "Бастапқы тест (Резервтік)",
-      theoryQuestions: ["HTML деген не?", "CSS деген не?"],
-      writtenQuestions: [
-        { id: "wq1", text: "React пен Vue айырмашылығын жазыңыз", placeholder: "Жауап...", hint: "", keywords: [] }
-      ]
+      sessionId,
+      title: `Оценка уровня: ${roadmap.title}`,
+      quizQuestions: payload.quizQuestions.map(({ id, question, options }) => ({ id, question, options })),
+      writtenQuestions: payload.writtenQuestions,
+    });
+  } catch (error) {
+    console.error("Ассессмент генерациялау қатесі:", error);
+
+    const roadmap = await prisma.roadmap.findUnique({ where: { id: roadmapId } });
+    const title = roadmap?.title ?? roadmapId;
+    const payload = fallbackAssessment(title);
+    const sessionId = createAssessmentSession({
+      userId,
+      roadmapId,
+      quizQuestions: payload.quizQuestions,
+      writtenQuestions: payload.writtenQuestions,
+    });
+
+    res.json({
+      roadmapId,
+      sessionId,
+      title: "Тест (резерв): ответы с вариантами + короткие развёрнутые ответы",
+      quizQuestions: payload.quizQuestions.map(({ id, question, options }) => ({ id, question, options })),
+      writtenQuestions: payload.writtenQuestions,
     });
   }
 };
@@ -119,29 +251,52 @@ export const submitAssessment = async (req: any, res: Response) => {
   try {
     const { roadmapId } = req.params;
     const userId = parseInt(req.user.userId, 10);
-    
-    // Фронтендтен келетін деректер (Жаңа формат немесе Ескі формат болуы мүмкін)
-    const { theoryScore, writtenAnswers, answers } = req.body;
+
+    const { sessionId, quizAnswers, theoryScore, writtenAnswers, answers } = req.body;
 
     let finalScore = 0;
     let assignedLevel = "Junior";
     let aiFeedback = "Бастапқы деңгей";
 
-    // 1-ЖАҒДАЙ: ЖАҢА AI ФОРМАТЫ КЕЛСЕ (theoryScore + writtenAnswers)
-    if (writtenAnswers && Array.isArray(writtenAnswers)) {
-      const roadmap = await prisma.roadmap.findUnique({ where: { id: roadmapId } });
-      
-      if (roadmap) {
-        // AI арқылы жазбаша мәтінді бағалау
-        const evaluation = await evaluateAssessmentAnswers(roadmap.title, writtenAnswers);
-        
-        finalScore = (theoryScore || 0) + (evaluation.aiScore || 0);
-        assignedLevel = evaluation.levelLabel || "Junior";
-        aiFeedback = evaluation.feedback || "Бағаланды";
+    const roadmap = await prisma.roadmap.findUnique({ where: { id: roadmapId } });
+
+    if (
+      sessionId &&
+      quizAnswers &&
+      typeof quizAnswers === 'object' &&
+      writtenAnswers &&
+      Array.isArray(writtenAnswers) &&
+      roadmap
+    ) {
+      const session = takeAssessmentSession(String(sessionId), userId, roadmapId);
+      if (!session) {
+        return res.status(400).json({
+          error: 'Сессия теста недействительна или истекла. Откройте экран оценки заново.',
+        });
       }
-    } 
-    // 2-ЖАҒДАЙ: ЕСКІ ФОРМАТ КЕЛСЕ (Конфликтті болдырмау үшін)
-    else if (answers) {
+
+      let quizCorrect = 0;
+      const quizTotal = session.quizQuestions.length;
+      for (const q of session.quizQuestions) {
+        const picked = quizAnswers[q.id];
+        const idx = typeof picked === 'number' ? picked : parseInt(String(picked), 10);
+        if (Number.isFinite(idx) && idx === q.correctIndex) quizCorrect += 1;
+      }
+
+      const evaluation = await evaluateAssessmentWithQuiz(roadmap.title, quizCorrect, quizTotal, writtenAnswers);
+
+      const aiScore = typeof evaluation.aiScore === 'number' ? evaluation.aiScore : 0;
+      const quizPart = quizTotal > 0 ? (100 * quizCorrect) / quizTotal : 0;
+      finalScore = Math.round(quizPart * 0.65 + (aiScore / 10) * 100 * 0.35);
+      assignedLevel = evaluation.levelLabel || 'Junior';
+      aiFeedback = evaluation.feedback || 'Бағаланды';
+    } else if (writtenAnswers && Array.isArray(writtenAnswers) && roadmap) {
+      const evaluation = await evaluateAssessmentAnswers(roadmap.title, writtenAnswers);
+
+      finalScore = (theoryScore || 0) + (evaluation.aiScore || 0);
+      assignedLevel = evaluation.levelLabel || "Junior";
+      aiFeedback = evaluation.feedback || "Бағаланды";
+    } else if (answers) {
       finalScore = Object.values(answers).reduce((a: any, b: any) => a + b, 0) as number;
       assignedLevel = finalScore > 10 ? "Middle" : "Junior";
     }

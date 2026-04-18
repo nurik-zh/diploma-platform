@@ -103,6 +103,38 @@ export const submitTopicResult = async (req: any, res: Response) => {
       }
     });
 
+    // getRoadmapTree: нода без userProgress → "locked". После теста ≥70% открываем следующую
+    // (логика как в roadmapController.completeNode).
+    if (score >= 70) {
+      const node = await prisma.roadmapNode.findUnique({
+        where: { id: topicId },
+      });
+      if (node) {
+        const nextNode = await prisma.roadmapNode.findFirst({
+          where: {
+            roadmapId: node.roadmapId,
+            orderIndex: node.orderIndex + 1,
+          },
+        });
+        if (nextNode) {
+          await prisma.userProgress.upsert({
+            where: {
+              userId_nodeId: {
+                userId,
+                nodeId: nextNode.id,
+              },
+            },
+            update: { status: "not_started" },
+            create: {
+              userId,
+              nodeId: nextNode.id,
+              status: "not_started",
+            },
+          });
+        }
+      }
+    }
+
     res.json({ 
       status: "success", 
       completed: score >= 70,

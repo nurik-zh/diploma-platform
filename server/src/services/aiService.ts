@@ -172,36 +172,52 @@ export const generateDailyQuiz = async (roadmapTitle: string, nodeTitle: string)
   }
 };
 
-export const generateAssessmentQuestions = async (roadmapTitle: string) => {
+export type GeneratedAssessment = {
+  quizQuestions: {
+    id: string;
+    question: string;
+    options: string[];
+    correctIndex: number;
+  }[];
+  writtenQuestions: {
+    id: string;
+    text: string;
+    placeholder?: string;
+    hint?: string;
+    keywords?: string[];
+  }[];
+};
+
+export const generateAssessmentQuestions = async (roadmapTitle: string): Promise<GeneratedAssessment> => {
   try {
     const prompt = `
       Ты IT-ментор. Сгенерируй тест для оценки уровня навыков по направлению "${roadmapTitle}".
-      Мне нужно 3 теоретических вопроса (где пользователь сам выберет уровень знаний от 1 до 3) и 2 практических вопроса, на которые пользователь должен дать развернутый текстовый ответ.
+      Нужно 6 вопросов с вариантами ответа (ровно 4 варианта у каждого), сложность от базовой к продвинутой.
+      И 2 практических вопроса с развёрнутым свободным ответом (кейс / объяснение концепции).
+      Вопросы на русском языке.
       
       Верни ответ ТОЛЬКО в формате JSON:
       {
-        "theoryQuestions": [
-          "Текст теоретического вопроса 1?",
-          "Текст теоретического вопроса 2?",
-          "Текст теоретического вопроса 3?"
+        "quizQuestions": [
+          {
+            "id": "q1",
+            "question": "Текст вопроса?",
+            "options": ["вариант A", "вариант B", "вариант C", "вариант D"],
+            "correctIndex": 0
+          }
         ],
         "writtenQuestions": [
           {
             "id": "wq1",
-            "text": "Текст практического вопроса/кейса 1",
-            "placeholder": "Подсказка для поля ввода...",
-            "hint": "Краткая подсказка",
-            "keywords": ["ключевое слово 1", "ключевое слово 2"]
-          },
-          {
-            "id": "wq2",
-            "text": "Текст практического вопроса/кейса 2",
-            "placeholder": "Подсказка для поля ввода...",
-            "hint": "Краткая подсказка",
-            "keywords": ["ключевое слово 1", "ключевое слово 2"]
+            "text": "Текст практического вопроса",
+            "placeholder": "Краткий ответ...",
+            "hint": "Подсказка",
+            "keywords": ["слово1"]
           }
         ]
       }
+      
+      correctIndex — индекс правильного варианта 0..3.
     `;
 
     const result = await model.generateContent(prompt);
@@ -236,6 +252,44 @@ export const evaluateAssessmentAnswers = async (roadmapTitle: string, writtenAns
     return JSON.parse(cleanJson);
   } catch (error) {
     console.error("Evaluate Assessment Error:", error);
+    return { aiScore: 0, levelLabel: "Junior", feedback: "Ошибка оценки" };
+  }
+};
+
+export const evaluateAssessmentWithQuiz = async (
+  roadmapTitle: string,
+  quizCorrect: number,
+  quizTotal: number,
+  writtenAnswers: { question: string; answer: string }[]
+) => {
+  try {
+    const pct = quizTotal > 0 ? Math.round((100 * quizCorrect) / quizTotal) : 0;
+    const prompt = `
+      Ты IT-ментор. Пользователь проходит оценку по направлению "${roadmapTitle}".
+      
+      Результат теста с вариантами ответов: ${quizCorrect} верных из ${quizTotal} (${pct}%).
+      
+      Развёрнутые ответы на открытые вопросы:
+      ${JSON.stringify(writtenAnswers, null, 2)}
+      
+      Учитывай и объективный результат теста, и качество письменных ответов.
+      Оцени письменные ответы в совокупности по 10-балльной шкале (поле aiScore).
+      Определи итоговый уровень: строго одна из строк:
+      "Junior", "Junior Strong", "Middle", "Middle Strong", "Senior".
+      
+      Верни ответ ТОЛЬКО в формате JSON:
+      {
+        "aiScore": 7,
+        "levelLabel": "Middle",
+        "feedback": "Краткий отзыв 1-2 предложения на русском"
+      }
+    `;
+
+    const result = await model.generateContent(prompt);
+    const cleanJson = result.response.text().replace(/```json|```/g, "").trim();
+    return JSON.parse(cleanJson);
+  } catch (error) {
+    console.error("Evaluate Assessment With Quiz Error:", error);
     return { aiScore: 0, levelLabel: "Junior", feedback: "Ошибка оценки" };
   }
 };

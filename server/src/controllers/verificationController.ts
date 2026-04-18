@@ -1,7 +1,8 @@
 import { Response } from 'express';
 import pkg from '@prisma/client';
-const { PrismaClient } = pkg;
-const prisma = new PrismaClient();
+import { prisma } from '../prisma';
+// const { PrismaClient } = pkg;
+// const prisma = new PrismaClient();
 
 // Слоттардың даталарын 7 күнге генерациялау (Фронтендтегі логиканы бэкендке көшірдік)
 const getUpcomingDates = (days: number): string[] => {

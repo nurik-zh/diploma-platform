@@ -17,10 +17,25 @@ import companyRoutes from './routes/companyRoutes.js';
 dotenv.config();
 const app = express();
 
-app.use(cors({
-    origin: 'http://localhost:5173', // Фронтендтің мекенжайы
-    credentials: true
-}));
+// Мобильді клиенттер көбінесе Origin жібермейді; веб үшін тізім немесе ENV
+const defaultOrigins = ['http://localhost:5173', 'http://localhost:8081', 'http://localhost:19006'];
+const extraOrigins = (process.env.CORS_ORIGINS ?? '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+const allowedOrigins = [...new Set([...defaultOrigins, ...extraOrigins])];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (/^http:\/\/192\.168\.\d+\.\d+:\d+$/.test(origin)) return callback(null, true);
+      callback(null, false);
+    },
+    credentials: true,
+  })
+);
 
 app.use(express.json());
 
