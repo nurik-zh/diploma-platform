@@ -13,63 +13,61 @@ export const getTopicContent = async (req: any, res: Response) => {
 
   if (!node) return res.status(404).json({ message: "Topic not found" });
 
-  // Егер теория бос болса, AI-ды шақырамыз
-  if (!node.theory) {
+  // ӨЗГЕРІС: Егер теория бос болса НЕМЕСЕ бұрынғы қате сақталып қалған болса, AI-ды қайта шақырамыз
+  if (!node.theory || node.theory === "Мазмұн уақытша қолжетімсіз.") {
     console.log(`🤖 AI "${node.title}" тақырыбына мазмұн дайындауда...`);
     const aiContent = await generateTopicContent(node.title, node.roadmap.title);
     
-    await prisma.roadmapNode.update({
-      where: { id: topicId },
-      data: { theory: aiContent.theory, testData: aiContent.questions }
-    });
+    // ӨЗГЕРІС: AI дұрыс жауап берсе ғана базаны жаңартамыз
+    if (aiContent.theory !== "Мазмұн уақытша қолжетімсіз.") {
+        await prisma.roadmapNode.update({
+          where: { id: topicId },
+          data: { theory: aiContent.theory, testData: aiContent.questions }
+        });
+    }
     
-    // Контракт: TopicContentResponse []
     return res.json([{ topicId: node.id, theory: aiContent.theory }]);
   }
 
   res.json([{ topicId: node.id, theory: node.theory }]);
 };
 
+// topicController.ts
 export const getTopicTest = async (req: any, res: Response) => {
   try {
     const { topicId } = req.params;
+    const node = await prisma.roadmapNode.findUnique({ where: { id: topicId } });
 
-    const node = await prisma.roadmapNode.findUnique({
-      where: { id: topicId }
-    });
+    if (!node) return res.status(404).json({ message: "Тақырып табылмады" });
 
-    if (!node) {
-      return res.status(404).json({ message: "Тақырып табылмады" });
+    const testData = node.testData as any;
+
+    // Егер тест базада болса, ИИ-ді мазаламаймыз
+    if (testData?.questions?.length > 0) {
+      return res.json(testData);
     }
 
-    // Егер тест базада болса, қайтарамыз
-    if (node.testData && (node.testData as any).questions) {
-      return res.json(node.testData);
-    }
-
-    // AI-ға жіберетін тақырып аты (label немесе title)
-    // Егер node.label болмаса, node.title қолданыңыз
-    const topicTitle = (node as any).label || (node as any).title || "IT Topic";
+    // Егер тест жоқ болса, генерация жасаймыз
     const profession = "Fullstack Developer";
-
-    console.log(`Generating AI content for topic: ${topicTitle}`);
+    console.log(`[AI] Generating content ONLY for: ${node.title}`);
     
-    const aiResult = await generateTopicContent(topicTitle, profession);
+    const aiResult = await generateTopicContent(node.title, profession);
 
-    // 4. Деректерді базаға сақтаймыз
-    // МАҢЫЗДЫ: 'content' орнына 'theory' деп жазыңыз
+    if (!aiResult.questions || aiResult.questions.length === 0) {
+      return res.status(503).json({ error: "ИИ қазір бос емес, сәлден соң қайталаңыз" });
+    }
+
+    // Теория мен тестті бірден сақтаймыз
     await prisma.roadmapNode.update({
       where: { id: topicId },
       data: {
-        theory: aiResult.theory, // Prisma-да 'theory' деп аталады
+        theory: aiResult.theory,
         testData: { questions: aiResult.questions }
       }
     });
 
     res.json({ questions: aiResult.questions });
-
   } catch (error) {
-    console.error("GET TOPIC TEST ERROR:", error);
     res.status(500).json({ error: "Сервер қатесі" });
   }
 };

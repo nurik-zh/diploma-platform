@@ -16,6 +16,7 @@ router.get('/challenges', friendController.getChallenges);
 router.post('/challenges', friendController.createChallenge);
 router.get('/challenges/notifications', friendController.getNotifications);
 router.patch('/challenges/:id/read', friendController.markNotificationRead);
+router.get('/search', friendController.searchUsers);
 
 router.post('/challenges/complete', friendController.completeChallenge);
 

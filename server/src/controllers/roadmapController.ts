@@ -1,19 +1,7 @@
 import { Response } from 'express';
 import pkg from '@prisma/client';
-import {
-  getAIResponse,
-  generateCustomRoadmap,
-  generateAssessmentQuestions,
-  evaluateAssessmentAnswers,
-  evaluateAssessmentWithQuiz,
-  type GeneratedAssessment,
-} from '../services/aiService.js';
-import {
-  createAssessmentSession,
-  takeAssessmentSession,
-  type AssessmentQuizQuestion,
-  type AssessmentWrittenQuestion,
-} from '../assessmentSessionStore.js';
+import { getAIResponse, generateCustomRoadmap, generateAssessmentQuestions, // ЖАҢА
+  evaluateAssessmentAnswers } from '../services/aiService.js';
 const { PrismaClient } = pkg;
 const prisma = new PrismaClient();
 
@@ -279,52 +267,29 @@ export const submitAssessment = async (req: any, res: Response) => {
   try {
     const { roadmapId } = req.params;
     const userId = parseInt(req.user.userId, 10);
-
-    const { sessionId, quizAnswers, theoryScore, writtenAnswers, answers } = req.body;
+    
+    // Фронтендтен келетін деректер (Жаңа формат немесе Ескі формат болуы мүмкін)
+    const { theoryScore, writtenAnswers, answers } = req.body;
 
     let finalScore = 0;
     let assignedLevel = "Junior";
-    let aiFeedback = "Бастапқы деңгей";
+    let aiFeedback = "Бағалау мүмкін болмады";
 
-    const roadmap = await prisma.roadmap.findUnique({ where: { id: roadmapId } });
-
-    if (
-      sessionId &&
-      quizAnswers &&
-      typeof quizAnswers === 'object' &&
-      writtenAnswers &&
-      Array.isArray(writtenAnswers) &&
-      roadmap
-    ) {
-      const session = takeAssessmentSession(String(sessionId), userId, roadmapId);
-      if (!session) {
-        return res.status(400).json({
-          error: 'Сессия теста недействительна или истекла. Откройте экран оценки заново.',
-        });
+    // 1-ЖАҒДАЙ: ЖАҢА AI ФОРМАТЫ КЕЛСЕ (theoryScore + writtenAnswers)
+    if (writtenAnswers && Array.isArray(writtenAnswers)) {
+      const roadmap = await prisma.roadmap.findUnique({ where: { id: roadmapId } });
+      
+      if (roadmap) {
+        // AI арқылы жазбаша мәтінді бағалау
+        const evaluation = await evaluateAssessmentAnswers(roadmap.title, writtenAnswers);
+        
+        finalScore = (theoryScore || 0) + (evaluation.aiScore || 0);
+        assignedLevel = evaluation.levelLabel || "Junior";
+        aiFeedback = evaluation.feedback || "Бағаланды";
       }
-
-      let quizCorrect = 0;
-      const quizTotal = session.quizQuestions.length;
-      for (const q of session.quizQuestions) {
-        const picked = quizAnswers[q.id];
-        const idx = typeof picked === 'number' ? picked : parseInt(String(picked), 10);
-        if (Number.isFinite(idx) && idx === q.correctIndex) quizCorrect += 1;
-      }
-
-      const evaluation = await evaluateAssessmentWithQuiz(roadmap.title, quizCorrect, quizTotal, writtenAnswers);
-
-      const aiScore = typeof evaluation.aiScore === 'number' ? evaluation.aiScore : 0;
-      const quizPart = quizTotal > 0 ? (100 * quizCorrect) / quizTotal : 0;
-      finalScore = Math.round(quizPart * 0.65 + (aiScore / 10) * 100 * 0.35);
-      assignedLevel = evaluation.levelLabel || 'Junior';
-      aiFeedback = evaluation.feedback || 'Бағаланды';
-    } else if (writtenAnswers && Array.isArray(writtenAnswers) && roadmap) {
-      const evaluation = await evaluateAssessmentAnswers(roadmap.title, writtenAnswers);
-
-      finalScore = (theoryScore || 0) + (evaluation.aiScore || 0);
-      assignedLevel = evaluation.levelLabel || "Junior";
-      aiFeedback = evaluation.feedback || "Бағаланды";
-    } else if (answers) {
+    } 
+    // 2-ЖАҒДАЙ: ЕСКІ ФОРМАТ КЕЛСЕ (Конфликтті болдырмау үшін)
+    else if (answers) {
       finalScore = Object.values(answers).reduce((a: any, b: any) => a + b, 0) as number;
       assignedLevel = finalScore > 10 ? "Middle" : "Junior";
     }
@@ -335,44 +300,91 @@ export const submitAssessment = async (req: any, res: Response) => {
 
     const finalScoreInt = Math.floor(Number(finalScore) || 0);
 
-    if (existingSkill) {
-      await prisma.userSkillLevel.update({
-        where: { id: existingSkill.id },
-        data: { levelLabel: assignedLevel, score: finalScoreInt }
-      });
-    } else {
-      await prisma.userSkillLevel.create({
-        data: { userId, roadmapId, levelLabel: assignedLevel, score: finalScore }
-      });
-    }
-
-    const existingRoadmap = await prisma.userRoadmap.findFirst({
-      where: { userId, roadmapId }
+    // 2. Деңгейді сақтау (UserSkillLevel)
+    await prisma.userSkillLevel.upsert({
+      where: {
+        userId_roadmapId: { userId, roadmapId } // Егер бұл unique constraint болмаса, findFirst + update/create қолданыңыз
+      },
+      update: { levelLabel: assignedLevel, score: finalScoreInt },
+      create: { userId, roadmapId, levelLabel: assignedLevel, score: finalScoreInt }
     });
-    if (!existingRoadmap) {
-      // Егер бұл бағыт тізімде жоқ болса, оны жаңадан қосамыз
-      await prisma.userRoadmap.create({
-        data: {
-          userId,
-          roadmapId,
-          assignedLevel
+
+    // =====================================================================
+    // 3. ЖАҢА ФИШКА: Деңгейге сай жеке Roadmap және Nodes генерациялау
+    // =====================================================================
+    
+    // Жаңа бірегей ID (әр қолданушыға жеке болуы үшін)
+    const personalRoadmapId = `ai_tailored_${userId}_${roadmapId}`;
+
+    // ИИ-ден осы деңгейге сай тақырыптарды сұрау
+    const aiTopicsData = await generateTopicsByLevel(roadmap.title, assignedLevel);
+
+    // Жеке Roadmap бар-жоғын тексеріп, болмаса құру немесе жаңарту
+    await prisma.roadmap.upsert({
+      where: { id: personalRoadmapId },
+      update: { 
+        level: assignedLevel,
+        description: `Сіздің ${assignedLevel} деңгейіңізге арнайы құрастырылған оқу жоспары.` 
+      },
+      create: {
+        id: personalRoadmapId,
+        title: `${roadmap.title} (${assignedLevel})`,
+        description: `Сіздің ${assignedLevel} деңгейіңізге арнайы құрастырылған оқу жоспары.`,
+        level: assignedLevel,
+        recommended: false
+      }
+    });
+
+    await prisma.userProgress.deleteMany({
+      where: {
+        node: {
+          roadmapId: personalRoadmapId
         }
+      }
+    });
+
+    // Ескі тақырыптарды (nodes) өшіріп, жаңаларын үстінен жазу
+    await prisma.roadmapNode.deleteMany({ where: { roadmapId: personalRoadmapId } });
+
+    // ИИ берген тақырыптарды RoadmapNode кестесіне сақтау
+    const nodesData = aiTopicsData.nodes.map((node: any, index: number) => ({
+      roadmapId: personalRoadmapId,
+      title: node.title,
+      description: node.description,
+      orderIndex: index + 1,
+      level: assignedLevel
+    }));
+    await prisma.roadmapNode.createMany({ data: nodesData })
+
+    await prisma.userRoadmap.deleteMany({
+      where: { userId, roadmapId: roadmapId } 
+    });
+
+    // Орнына жаңа жеке бағытты қосамыз
+    const existingUserRoadmap = await prisma.userRoadmap.findFirst({
+      where: { userId, roadmapId: personalRoadmapId }
+    });
+
+    if (!existingUserRoadmap) {
+      await prisma.userRoadmap.create({
+        data: { userId, roadmapId: personalRoadmapId, assignedLevel }
       });
     } else {
-      // Егер бар болса, деңгейін ғана жаңартамыз (мысалы Junior-дан Middle-ге өтсе)
       await prisma.userRoadmap.update({
-        where: { id: existingRoadmap.id },
+        where: { id: existingUserRoadmap.id },
         data: { assignedLevel }
       });
     }
 
+    // 5. Фронтендке жауап қайтару (жаңа personalRoadmapId жібереміз)
     res.json({ 
-      roadmapId, 
-      score: finalScore,
+      originalRoadmapId: roadmapId,
+      personalRoadmapId: personalRoadmapId, // МАҢЫЗДЫ: Осы ID-ге redirect жасаймыз
+      score: finalScoreInt,
       levelLabel: assignedLevel, 
       feedback: aiFeedback,
       message: "Деңгей сәтті сақталды!" 
-    })
+    });
 
   } catch (error) {
     console.error("Ассессмент сақтау қатесі:", error);
@@ -640,6 +652,14 @@ export const createAiRoadmap = async (req: any, res: any) => {
     res.status(201).json(savedRoadmap);
   } catch (error) {
     console.error("AI Creation/DB Save Error:", error);
+    
+    // Егер қате Google серверінен болса (503)
+    if (error.message.includes("503") || error.message.includes("high demand")) {
+      return res.status(503).json({ 
+        error: "AI серверлері қазір бос емес. Өтінеміз, 5 минуттан соң қайталап көріңіз." 
+      });
+    }
+
     res.status(500).json({ error: "AI жол картасын сақтау кезінде қате кетті" });
   }
 };

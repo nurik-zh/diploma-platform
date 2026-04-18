@@ -55,7 +55,10 @@ export const generateTopicContent = async (title: string, profession: string) =>
       1. Сапалы әрі қысқаша теориялық материал жаз (Markdown форматында).
       2. Тақырыпты бекітуге арналған 3 сұрақтан тұратын тест жаса.
       
-      Жауапты ТЕК қана таза JSON форматында қайтар, ешқандай түсініктеме мәтін қоспа.
+      МАҢЫЗДЫ ТАЛАПТАР:
+      - Жауапты ТЕК қана таза JSON форматында қайтар.
+      - "theory" мәтінінің ішінде ЕШҚАШАН қос тырнақша (") қолданба! Оның орнына жалаң тырнақша (') қолдан.
+      
       {
         "theory": "Мәтін...",
         "questions": [
@@ -68,15 +71,15 @@ export const generateTopicContent = async (title: string, profession: string) =>
     const text = result.response.text();
     
     // Markdown-нан тазарту
-    const jsonMatch = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/); // Тек JSON форматын жұлып алады
+    const jsonMatch = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
     if (!jsonMatch) {
       throw new Error("AI жауабынан дұрыс дерек табылмады");
     }
     const cleanJson = jsonMatch[0];
     return JSON.parse(cleanJson);
   } catch (error) {
-    console.error("AI Generation failed:", error);
-    // Қате болған жағдайда бос құрылым қайтару (интерфейс құламауы үшін)
+    console.error("AI Topic Generation failed:", error);
+    // Сервер құламас үшін бос массив қайтарамыз
     return { theory: "Мазмұн уақытша қолжетімсіз.", questions: [] };
   }
 };
@@ -159,7 +162,7 @@ export const generateDailyQuiz = async (roadmapTitle: string, nodeTitle: string)
       күнделікті қайталауға арналған 3 сұрақтан тұратын мини-тест құрастыр. 
       Сұрақтар орыс тілінде болуы тиіс.
       
-      Жауапты ТЕК қана JSON форматында қайтар, ешқандай Markdown (बैक틱) немесе түсініктеме қоспа:
+      Жауапты ТЕК қана JSON форматында қайтар:
       {
         "questions": [
           {
@@ -177,10 +180,14 @@ export const generateDailyQuiz = async (roadmapTitle: string, nodeTitle: string)
 
     const result = await model.generateContent(prompt);
     const text = result.response.text();
-    const cleanJson = text.replace(/```json/g, "").replace(/```/g, "").trim();
-    return JSON.parse(cleanJson);
-  } catch (error) {
-    console.error("Daily Quiz AI Error:", error);
+    
+    // ЕҢ ҚАУІПСІЗ JSON ЖҰЛЫП АЛУ ӘДІСІ:
+    const jsonMatch = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+    if (!jsonMatch) throw new Error("JSON табылмады");
+    
+    return JSON.parse(jsonMatch[0]);
+  } catch (error: any) {
+    console.error("Daily Quiz AI Error:", error.message);
     return null;
   }
 };
@@ -268,77 +275,69 @@ export const generateAssessmentQuestions = async (
   }
 };
 
-export const evaluateAssessmentAnswers = async (roadmapTitle: string, writtenAnswers: {question: string, answer: string}[]) => {
+export const evaluateAssessmentAnswers = async (roadmapTitle: string, writtenAnswers: any[]) => {
   try {
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+    const answersText = writtenAnswers.map((item, index) => 
+      `Сұрақ ${index + 1}: ${item.question}\nПайдаланушы жауабы: ${item.answer}`
+    ).join('\n\n');
+
     const prompt = `
-      Ты IT-ментор. Пользователь претендует на квалификацию по направлению "${roadmapTitle}".
-      Вот его развернутые ответы на практические вопросы:
-      ${JSON.stringify(writtenAnswers, null, 2)}
-      
-      Оцени эти ответы по 10-балльной шкале (общий балл за все ответы).
-      Затем определи его уровень: "Junior", "Junior Strong", "Middle", "Middle Strong" или "Senior".
-      
-      Верни ответ ТОЛЬКО в формате JSON:
+      Сіз - "Senior Tech Lead" және IT сұхбат алушысыз. Пайдаланушының "${roadmapTitle}" бағыты бойынша берген жауаптарын бағалаңыз.
+
+      Жауаптар:
+      ${answersText}
+
+      БАҒАЛАУ КРИТЕРИЙЛЕРІ:
+      - Junior (0 - 40 балл): Тек базалық түсінік бар.
+      - Middle (41 - 80 балл): Жақсы практикалық білімі бар, мысалдар келтіре алады.
+      - Senior (81 - 100 балл): Архитектуралық деңгейде түсінеді.
+
+      ТАЛАПТАР:
+      1. Feedback (пікір) қазақ тілінде, 2-3 сөйлем болуы керек.
+      2. МАҢЫЗДЫ: Feedback мәтінінің ішінде ешқашан қос тырнақша (") қолданбаңыз! Оның орнына жалаң тырнақша (') қолданыңыз.
+
+      ШЫҒАРУ ФОРМАТЫ (Тек қана таза JSON қайтарыңыз):
       {
-        "aiScore": 8,
-        "levelLabel": "Middle",
-        "feedback": "Твой краткий отзыв о его знаниях (1-2 предложения)"
+        "aiScore": 85,
+        "levelLabel": "Senior",
+        "feedback": "Сіздің жауаптарыңыз өте жақсы, бірақ 'best practices' жайлы оқу керек."
       }
     `;
 
     const result = await model.generateContent(prompt);
-    const cleanJson = result.response.text().replace(/```json|```/g, "").trim();
-    return JSON.parse(cleanJson);
-  } catch (error) {
-    console.error("Evaluate Assessment Error:", error);
-    return { aiScore: 0, levelLabel: "Junior", feedback: "Ошибка оценки" };
-  }
-};
-export const evaluateAssessmentWithQuiz = async (
-  roadmapTitle: string,
-  quizCorrect: number,
-  quizTotal: number,
-  writtenAnswers: { question: string; answer: string }[]
-) => {
-  try {
-    const pct = quizTotal > 0 ? Math.round((100 * quizCorrect) / quizTotal) : 0;
+    const response = await result.response;
+    const text = response.text();
 
-    const prompt = `
-      Ты IT-ментор. Пользователь проходит оценку по направлению "${roadmapTitle}".
-      
-      Результат теста: ${quizCorrect} из ${quizTotal} (${pct}%).
-      
-      Ответы:
-      ${JSON.stringify(writtenAnswers, null, 2)}
-      
-      Оцени по шкале 0-10 (aiScore).
-      Уровень: "Junior", "Junior Strong", "Middle", "Middle Strong", "Senior".
-      
-      Верни JSON:
-      {
-        "aiScore": 7,
-        "levelLabel": "Middle",
-        "feedback": "Короткий отзыв"
-      }
-    `;
-
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
-
+    // Қауіпсіз JSON жұлып алу (алдыңғы функциялардағыдай)
     const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("JSON error");
+    if (!jsonMatch) {
+      throw new Error("AI жауабынан JSON табылмады");
+    }
 
-    return JSON.parse(jsonMatch[0]);
+    // JSON-ды парсинг жасау
+    const evaluation = JSON.parse(jsonMatch[0]);
+
+    return {
+      aiScore: evaluation.aiScore || 0,
+      levelLabel: evaluation.levelLabel || "Junior",
+      feedback: evaluation.feedback || "Жауаптарыңыз қабылданды."
+    };
 
   } catch (error) {
-    console.error("Evaluate Error:", error);
-    return { aiScore: 0, levelLabel: "Junior", feedback: "Ошибка оценки" };
+    console.error("AI бағалау кезіндегі қате (JSON Parsing немесе API):", error);
+    // Қате болған жағдайда бағдарлама құлап қалмас үшін резервтік жауап
+    return {
+      aiScore: 0,
+      levelLabel: "Junior",
+      feedback: "Жауаптарыңыз сәтті сақталды (ИИ уақытша қолжетімсіз)."
+    };
   }
 };
-export const generateVacancyPrepData = async (
-  title: string,
-  company: string
-) => {
+
+// aiService.ts-ке қосу
+export const generateVacancyPrepData = async (title: string, company: string) => {
   try {
     const prompt = `
       Сен IT-рекрутерсің.
@@ -364,5 +363,44 @@ export const generateVacancyPrepData = async (
   } catch (error) {
     console.error("Vacancy Error:", error);
     return null;
+  }
+};
+
+export const generateTopicsByLevel = async (roadmapTitle: string, levelLabel: string) => {
+  try {
+    const prompt = `
+      Сен IT-менторсың. Пайдаланушының "${roadmapTitle}" бағыты бойынша қазіргі деңгейі: ${levelLabel}.
+      Осы деңгейге сай келетін, білімін одан әрі дамытуға арналған 5 негізгі тақырыптан (nodes) тұратын оқу жоспарын құрастыр.
+      Тақырыптар тым оңай болмауы тиіс, дәл осы ${levelLabel} деңгейінен бастап біртіндеп күрделенуі керек.
+      
+      Жауапты ТЕК қана JSON форматында қайтар:
+      {
+        "nodes": [
+          {
+            "title": "Тақырып атауы",
+            "description": "Осы тақырыпта не үйренетіні туралы қысқаша сипаттама"
+          }
+        ]
+      }
+    `;
+
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+    const jsonMatch = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/); 
+    
+    if (!jsonMatch) {
+      throw new Error("AI жауабынан JSON табылмады");
+    }
+    
+    return JSON.parse(jsonMatch[0]);
+  } catch (error) {
+    console.error("Topics generation AI Error:", error);
+    // Қате болса, резервтік дерек қайтарамыз
+    return {
+      nodes: [
+        { title: `${roadmapTitle}: Негізгі концепциялар`, description: "Базалық қайталау және кіріспе" },
+        { title: `Күрделі тәжірибелер`, description: `${levelLabel} деңгейіне арналған тапсырмалар` }
+      ]
+    };
   }
 };

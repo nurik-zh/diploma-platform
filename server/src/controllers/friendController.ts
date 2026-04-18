@@ -222,7 +222,6 @@ export const markNotificationRead = async (req: Request, res: Response) => {
   }
 };
 
-// controllers/friendController.ts
 export const createChallenge = async (req: Request, res: Response) => {
   try {
     const userId = Number((req as any).user.userId);
@@ -253,7 +252,6 @@ export const createChallenge = async (req: Request, res: Response) => {
   }
 };
 
-// controllers/friendController.ts
 export const completeChallenge = async (req: Request, res: Response) => {
   try {
     const userId = Number((req as any).user.userId);
@@ -318,5 +316,50 @@ export const completeChallenge = async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Сақтау қатесі:", error);
     res.status(500).json({ error: "Нәтижені сақтау мүмкін болмады" });
+  }
+};
+
+export const searchUsers = async (req: Request, res: Response) => {
+  try {
+    const userId = Number((req as any).user.userId);
+    const query = req.query.q as string;
+
+    // Егер іздеу жолы бос болса, бос массив қайтарамыз
+    if (!query || query.trim() === "") {
+      return res.json([]);
+    }
+
+    // 1. Ағымдағы достарды табу (оларды іздеу нәтижесінде көрсетпеу үшін)
+    const existingFriends = await prisma.friendship.findMany({
+      where: { userId },
+      select: { friendId: true }
+    });
+    
+    const excludeIds = existingFriends.map(f => f.friendId);
+    excludeIds.push(userId); // Өзін де тізімнен алып тастаймыз
+
+    // 2. Базадан аты немесе email-і бойынша іздеу
+    const users = await prisma.user.findMany({
+      where: {
+        id: { notIn: excludeIds }, // Достарды және өзін қоспаймыз
+        OR: [
+          { email: { contains: query, mode: "insensitive" } },
+          { fullName: { contains: query, mode: "insensitive" } }
+        ]
+      },
+      take: 5 // Тек алғашқы 5 адамды шығарамыз
+    });
+
+    const formattedUsers = users.map(user => ({
+      userId: user.id,
+      email: user.email,
+      fullName: user.fullName || user.email.split('@')[0],
+      avatar: (user.fullName?.[0] || user.email[0]).toUpperCase(),
+    }));
+
+    res.json(formattedUsers);
+  } catch (error) {
+    console.error("Іздеу кезінде қате кетті:", error);
+    res.status(500).json({ error: "Іздеу кезінде қате кетті" });
   }
 };
