@@ -13,33 +13,46 @@ import dailyTaskRoutes from './routes/dailyTaskRoutes.js'
 import communityRoutes from './routes/communityRoutes.js';
 import verificationRoutes from './routes/verificationRoutes.js';
 import companyRoutes from './routes/companyRoutes.js';
-
+import cron from 'node-cron';
+import { fetchAndSaveHHVacancies } from './services/hhService.js';
 dotenv.config();
 const app = express();
 
 // Мобильді клиенттер көбінесе Origin жібермейді; веб үшін тізім немесе ENV
-const defaultOrigins = ['http://localhost:5173', 'http://localhost:8081', 'http://localhost:19006'];
+const defaultOrigins = [
+  'http://localhost:5173',
+  'http://localhost:8081',
+  'http://localhost:19006'
+];
+
 const extraOrigins = (process.env.CORS_ORIGINS ?? '')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
+
 const allowedOrigins = [...new Set([...defaultOrigins, ...extraOrigins])];
 
 app.use(
   cors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
-      if (/^http:\/\/192\.168\.\d+\.\d+:\d+$/.test(origin)) return callback(null, true);
-      callback(null, false);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // локальный IP (мобилка)
+      if (/^http:\/\/192\.168\.\d+\.\d+:\d+$/.test(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(null, false);
     },
     credentials: true,
   })
 );
 
 app.use(express.json());
-
-// Swagger Configuration (Таза JSON, YAML қатесі мүлдем болмайды)
 const swaggerDocument = {
   openapi: '3.0.0',
   info: {
@@ -139,10 +152,8 @@ const swaggerDocument = {
   }
 };
 
-// Swagger UI қосу
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
-// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/roadmaps', roadmapRoutes);
@@ -159,7 +170,14 @@ app.use('/api/community', communityRoutes);
 app.use('/api/verification', verificationRoutes);
 app.use('/api/company', companyRoutes);
 
+// fetchAndSaveHHVacancies();
+cron.schedule('0 2 */4 * *', async () => {
+  console.log("Автоматты жаңарту уақыты келді...");
+  await fetchAndSaveHHVacancies();
+});
+
 const PORT = process.env.PORT || 5002;
+
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on http://localhost:${PORT}`);
   console.log(`📖 API Documentation: http://localhost:${PORT}/api-docs`);

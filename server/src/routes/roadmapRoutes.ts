@@ -15,7 +15,8 @@ import {
   removeUserRoadmap,
   createAiRoadmap,
   getUserAiRoadmaps,
-  getUserSkillLevels
+  getUserSkillLevels,
+  convertAndAddAiRoadmap
 } from "../controllers/roadmapController.js"
 import { authenticateToken } from '../middleware/authMiddleware.js';
 
@@ -37,6 +38,8 @@ router.get('/:roadmapId/assessment', authenticateToken, getRoadmapAssessment);
 router.post('/:roadmapId/assessment/submit', authenticateToken, submitAssessment);
 router.get('/activity', authenticateToken, getUserYearActivity);
 router.delete('/collection/:roadmapId', authenticateToken, removeUserRoadmap);
+
+router.post('/convert-ai',authenticateToken, convertAndAddAiRoadmap)
 
 router.post('/generate', authenticateToken, createAiRoadmap);
 router.get('/my-ai-roadmaps', authenticateToken, getUserAiRoadmaps)

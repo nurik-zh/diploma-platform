@@ -1,4 +1,3 @@
-
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import dotenv from 'dotenv';
 
@@ -36,7 +35,11 @@ export const getAIResponse = async (profession: string, score: number) => {
 
     const result = await model.generateContent(prompt);
     const text = result.response.text();
-    const cleanJson = text.replace(/```json|```/g, "").trim();
+    const jsonMatch = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/); // Тек JSON форматын жұлып алады
+    if (!jsonMatch) {
+      throw new Error("AI жауабынан дұрыс дерек табылмады");
+    }
+    const cleanJson = jsonMatch[0];
     return JSON.parse(cleanJson);
   } catch (error) {
     console.error("AI Error:", error);
@@ -65,7 +68,11 @@ export const generateTopicContent = async (title: string, profession: string) =>
     const text = result.response.text();
     
     // Markdown-нан тазарту
-    const cleanJson = text.replace(/```json|```/g, "").trim();
+    const jsonMatch = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/); // Тек JSON форматын жұлып алады
+    if (!jsonMatch) {
+      throw new Error("AI жауабынан дұрыс дерек табылмады");
+    }
+    const cleanJson = jsonMatch[0];
     return JSON.parse(cleanJson);
   } catch (error) {
     console.error("AI Generation failed:", error);
@@ -98,9 +105,11 @@ export const generateChallengeQuiz = async (roadmapTitle: string) => {
     const response = await result.response;
     const text = response.text();
     
-    // JSON-ды тазарту (Markdown белгілерін алып тастау)
-    const cleanJson = text.replace(/```json|```/g, "").trim();
-    
+    const jsonMatch = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/); // Тек JSON форматын жұлып алады
+    if (!jsonMatch) {
+      throw new Error("AI жауабынан дұрыс дерек табылмады");
+    }
+    const cleanJson = jsonMatch[0];
     return JSON.parse(cleanJson);
   } catch (error) {
     console.error("Gemini Error:", error);
@@ -131,7 +140,11 @@ export const generateCustomRoadmap = async (promptData: { title: string, goal: s
 
     const result = await model.generateContent(prompt);
     const text = result.response.text();
-    const cleanJson = text.replace(/```json|```/g, "").trim();
+    const jsonMatch = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/); // Тек JSON форматын жұлып алады
+    if (!jsonMatch) {
+      throw new Error("AI жауабынан дұрыс дерек табылмады");
+    }
+    const cleanJson = jsonMatch[0];
     return JSON.parse(cleanJson);
   } catch (error) {
     console.error("AI Error:", error);
@@ -188,14 +201,17 @@ export type GeneratedAssessment = {
   }[];
 };
 
-export const generateAssessmentQuestions = async (roadmapTitle: string): Promise<GeneratedAssessment> => {
+export const generateAssessmentQuestions = async (
+  roadmapTitle: string
+): Promise<GeneratedAssessment> => {
   try {
     const prompt = `
       Ты IT-ментор. Сгенерируй тест для оценки уровня навыков по направлению "${roadmapTitle}".
+
       Нужно 6 вопросов с вариантами ответа (ровно 4 варианта у каждого), сложность от базовой к продвинутой.
       И 2 практических вопроса с развёрнутым свободным ответом (кейс / объяснение концепции).
       Вопросы на русском языке.
-      
+
       Верни ответ ТОЛЬКО в формате JSON:
       {
         "quizQuestions": [
@@ -216,16 +232,39 @@ export const generateAssessmentQuestions = async (roadmapTitle: string): Promise
           }
         ]
       }
-      
+
       correctIndex — индекс правильного варианта 0..3.
     `;
 
     const result = await model.generateContent(prompt);
-    const cleanJson = result.response.text().replace(/```json|```/g, "").trim();
-    return JSON.parse(cleanJson);
+    const text = result.response.text();
+
+    const jsonMatch = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+    if (!jsonMatch) throw new Error("JSON табылмады");
+
+    return JSON.parse(jsonMatch[0]);
   } catch (error) {
-    console.error("Generate Assessment Error:", error);
-    throw new Error("Сұрақтар құрастыру мүмкін болмады");
+    console.error("AI Error:", error);
+
+    return {
+      quizQuestions: [
+        {
+          id: "q1",
+          question: `Что такое ${roadmapTitle}?`,
+          options: ["A", "B", "C", "D"],
+          correctIndex: 0
+        }
+      ],
+      writtenQuestions: [
+        {
+          id: "wq1",
+          text: "Опишите ваш опыт или понимание темы.",
+          placeholder: "Напишите развернутый ответ...",
+          hint: "Минимум 40 символов",
+          keywords: []
+        }
+      ]
+    };
   }
 };
 
@@ -255,7 +294,6 @@ export const evaluateAssessmentAnswers = async (roadmapTitle: string, writtenAns
     return { aiScore: 0, levelLabel: "Junior", feedback: "Ошибка оценки" };
   }
 };
-
 export const evaluateAssessmentWithQuiz = async (
   roadmapTitle: string,
   quizCorrect: number,
@@ -264,32 +302,67 @@ export const evaluateAssessmentWithQuiz = async (
 ) => {
   try {
     const pct = quizTotal > 0 ? Math.round((100 * quizCorrect) / quizTotal) : 0;
+
     const prompt = `
       Ты IT-ментор. Пользователь проходит оценку по направлению "${roadmapTitle}".
       
-      Результат теста с вариантами ответов: ${quizCorrect} верных из ${quizTotal} (${pct}%).
+      Результат теста: ${quizCorrect} из ${quizTotal} (${pct}%).
       
-      Развёрнутые ответы на открытые вопросы:
+      Ответы:
       ${JSON.stringify(writtenAnswers, null, 2)}
       
-      Учитывай и объективный результат теста, и качество письменных ответов.
-      Оцени письменные ответы в совокупности по 10-балльной шкале (поле aiScore).
-      Определи итоговый уровень: строго одна из строк:
-      "Junior", "Junior Strong", "Middle", "Middle Strong", "Senior".
+      Оцени по шкале 0-10 (aiScore).
+      Уровень: "Junior", "Junior Strong", "Middle", "Middle Strong", "Senior".
       
-      Верни ответ ТОЛЬКО в формате JSON:
+      Верни JSON:
       {
         "aiScore": 7,
         "levelLabel": "Middle",
-        "feedback": "Краткий отзыв 1-2 предложения на русском"
+        "feedback": "Короткий отзыв"
       }
     `;
 
     const result = await model.generateContent(prompt);
-    const cleanJson = result.response.text().replace(/```json|```/g, "").trim();
-    return JSON.parse(cleanJson);
+    const text = result.response.text();
+
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("JSON error");
+
+    return JSON.parse(jsonMatch[0]);
+
   } catch (error) {
-    console.error("Evaluate Assessment With Quiz Error:", error);
+    console.error("Evaluate Error:", error);
     return { aiScore: 0, levelLabel: "Junior", feedback: "Ошибка оценки" };
+  }
+};
+export const generateVacancyPrepData = async (
+  title: string,
+  company: string
+) => {
+  try {
+    const prompt = `
+      Сен IT-рекрутерсің.
+      "${company}" компаниясындағы "${title}" үшін:
+      1. 5 сұрақ + жауап
+      2. 5 тест сұрақ
+      
+      JSON қайтар:
+      {
+        "questions": [],
+        "test": []
+      }
+    `;
+
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("JSON error");
+
+    return JSON.parse(jsonMatch[0]);
+
+  } catch (error) {
+    console.error("Vacancy Error:", error);
+    return null;
   }
 };
